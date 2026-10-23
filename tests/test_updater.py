@@ -270,8 +270,10 @@ class UpdateDiscoveryTests(unittest.TestCase):
         release["assets"][0]["digest"] = None
         with patch.object(updater, "_json", return_value=release), self.assertRaises(updater.UpdateError):
             updater.check_for_update("1.1.0", frozen=True)
-        with patch.object(updater, "_json", side_effect=HTTPError("", 404, "not found", {}, None)), self.assertRaisesRegex(updater.UpdateError, "尚未发布"):
+        with patch.object(updater, "_json", side_effect=HTTPError("", 404, "not found", {}, None)), self.assertRaisesRegex(updater.UpdateError, "尚未发布 Windows 更新包"):
             updater.check_for_update("1.1.0", frozen=True)
+        with patch.object(updater, "_json", side_effect=HTTPError("", 404, "not found", {}, None)), self.assertRaisesRegex(updater.UpdateError, "源码版本"):
+            updater.check_for_update("1.1.0", frozen=False)
 
 
 class UpdateWindowTests(unittest.TestCase):

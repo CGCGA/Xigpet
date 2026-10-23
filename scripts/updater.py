@@ -105,7 +105,9 @@ def check_for_update(current=VERSION, *, frozen=None):
         return UpdateInfo(version, asset["browser_download_url"], "windows-x64", digest, checksum)
     except HTTPError as exc:
         if exc.code == 404:
-            raise UpdateError("GitHub 尚未发布此通道的版本，请稍后再检查。") from exc
+            if frozen:
+                raise UpdateError("GitHub 尚未发布 Windows 更新包。exe 版需要作者在 Releases 发布对应更新包；仅上传源码不会更新 exe。") from exc
+            raise UpdateError("GitHub 尚未发布可用的源码版本，请稍后再检查。") from exc
         if exc.code in (403, 429):
             raise UpdateError("GitHub 暂时限制访问，请稍后重试。") from exc
         raise UpdateError(f"GitHub 检查失败（HTTP {exc.code}）。") from exc

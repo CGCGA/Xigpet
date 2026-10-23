@@ -160,8 +160,8 @@
     "sha256": "ffd0c24b00d5170cf2d1561f30805c893ad6166139b6bd4328a860404e1a59be"
   },
   "scripts/updater.py": {
-    "bytes": 12490,
-    "sha256": "86c569956d82f8ecbe0a65ab45a5b957c75a9766280e2a61e3f29741f1ef7c34"
+    "bytes": 12693,
+    "sha256": "534b31b41d8506a6c5852510ab0b81e39df8d8c54da3109b405d34647efaf643"
   },
   "scripts/web_tools.py": {
     "bytes": 8605,
@@ -212,12 +212,12 @@
     "sha256": "3ffe07efcaa147e07c4c39361adf9610b15cd6a99b4bc5a980eb484f9829072e"
   },
   "tests/test_updater.py": {
-    "bytes": 17396,
-    "sha256": "b571e60e02231d80499306f633f372a472efb75c824851345931de3b943f25c2"
+    "bytes": 17635,
+    "sha256": "4aa2350bd7cb55a303de6010e62c278fa5fe4fd243020d260a56fa7e3abe73aa"
   },
   "VERSION.json": {
     "bytes": 21,
-    "sha256": "8c2b5a06267d466e3eb7460faa3e8bf8a1b42e8f3f69f5eee37a2181e8e993fe"
+    "sha256": "54dc7ddeddd9950890db7823bf87b1fa68a2ec8b5e4b166ec552c642cf400a5d"
   },
   "Xig.png": {
     "bytes": 2072878,
