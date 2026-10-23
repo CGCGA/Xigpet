@@ -156,8 +156,8 @@
     "sha256": "93edd63465c6dbde6da653fa6d48356a81c7ae6ca02d4def62321905b144f73d"
   },
   "scripts/update_installer.py": {
-    "bytes": 7823,
-    "sha256": "8815a6d4ec4b75503a727485690b9e113b4e5d4e9adcee8cef2c5359ba726fe8"
+    "bytes": 8597,
+    "sha256": "ffd0c24b00d5170cf2d1561f30805c893ad6166139b6bd4328a860404e1a59be"
   },
   "scripts/updater.py": {
     "bytes": 12490,
@@ -212,8 +212,8 @@
     "sha256": "3ffe07efcaa147e07c4c39361adf9610b15cd6a99b4bc5a980eb484f9829072e"
   },
   "tests/test_updater.py": {
-    "bytes": 15800,
-    "sha256": "7be913fce2c207b1ebe6c47d52b968a66bb28ea1a73290737d1812b4d2e71bf2"
+    "bytes": 17396,
+    "sha256": "b571e60e02231d80499306f633f372a472efb75c824851345931de3b943f25c2"
   },
   "VERSION.json": {
     "bytes": 21,

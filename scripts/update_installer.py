@@ -17,7 +17,7 @@ import time
 
 ROOT_FILES = {"main.py", "VERSION.json", "README.md", "SHARE_MANIFEST.json", "requirements.txt",
               ".editorconfig", ".gitattributes", ".gitignore", "Xig.png", "Xigpet.exe",
-              "启动聊天宠物.bat", "打包EXE.bat", "packaging/Xigpet.spec"}
+              "启动聊天宠物.bat", "打包EXE.bat", "packaging/Xigpet.spec", "media/index.json"}
 
 
 def allowed_file(name: str) -> bool:
@@ -106,7 +106,17 @@ def apply_files(root: Path, payload: Path, files: dict, backup: Path, remove=(),
             target.parent.mkdir(parents=True, exist_ok=True)
             temporary = target.with_name(target.name + ".xig-update-tmp")
             try:
-                shutil.copy2(payload / name, temporary)
+                if name == "media/index.json" and target.is_file():
+                    incoming = json.loads((payload / name).read_text(encoding="utf-8"))
+                    try:
+                        existing = json.loads(target.read_text(encoding="utf-8"))
+                    except (OSError, ValueError):
+                        raise ValueError("现有媒体标签索引无法读取，已取消更新以保留原文件")
+                    if not isinstance(incoming, dict) or not isinstance(existing, dict):
+                        raise ValueError("媒体标签索引格式无效")
+                    temporary.write_text(json.dumps({**incoming, **existing}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                else:
+                    shutil.copy2(payload / name, temporary)
                 deadline = time.monotonic() + retry_seconds
                 while True:
                     try:

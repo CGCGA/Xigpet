@@ -162,6 +162,30 @@ class UpdatePackageTests(unittest.TestCase):
         self.assertEqual(calls, 2)
         self.assertEqual((live / "main.py").read_bytes(), b"new")
 
+    def test_stock_media_index_merges_and_preserves_user_tags(self):
+        live, payload = self.root / "live-index", self.root / "payload-index"
+        (live / "media").mkdir(parents=True)
+        (payload / "media").mkdir(parents=True)
+        existing = {"my-picture.png": {"title": "private custom label"}, "happy.png": {"mood": "my mood"}}
+        incoming = {"new.png": {"title": "new built-in"}, "happy.png": {"mood": "default"}}
+        (live / "media/index.json").write_text(json.dumps(existing))
+        data = json.dumps(incoming).encode()
+        (payload / "media/index.json").write_bytes(data)
+        update_installer.apply_files(live, payload, {"media/index.json": digest(data)}, self.root / "index-backup")
+        merged = json.loads((live / "media/index.json").read_text(encoding="utf-8"))
+        self.assertEqual(merged["my-picture.png"], existing["my-picture.png"])
+        self.assertEqual(merged["happy.png"], existing["happy.png"])
+        self.assertEqual(merged["new.png"], incoming["new.png"])
+
+    def test_shared_program_allowlist_matches_updater_allowlist(self):
+        from scripts.prepare_share import TOP_FILES, MEDIA
+        names = [*TOP_FILES, *("media/" + name for name in MEDIA), "media/index.json",
+                 "config/setting.example.md", "config/deepseek_key.example.txt", "config/qq_bridge.example.json",
+                 ".gitignore", ".gitattributes", "README.md", "scripts/updater.py", "xigpet/app.py"]
+        for name in names:
+            with self.subTest(name=name):
+                self.assertTrue(update_installer.allowed_file(name))
+
     def test_installer_launch_is_hidden_and_source_helper_is_staged(self):
         live = self.root / "app"
         stage = live / ".updates/update-fixture"
