@@ -83,7 +83,7 @@ def rounded(canvas, x1, y1, x2, y2, radius=16, **options):
 
 
 class DesktopPet(tk.Toplevel):
-    def __init__(self, master, image_paths, settings_path, on_restore, on_exit, *, animation_dirs=(), on_qq_settings=None, on_close_pet=None):
+    def __init__(self, master, image_paths, settings_path, on_restore, on_exit, *, animation_dirs=(), on_qq_settings=None, on_close_pet=None, on_check_updates=None):
         super().__init__(master)
         self.withdraw()
         self.overrideredirect(True)
@@ -141,6 +141,8 @@ class DesktopPet(tk.Toplevel):
         self.menu = tk.Menu(self, tearoff=False)
         self.menu.bind("<Unmap>", lambda _event: self._end_menu())
         self.menu.add_command(label="打开聊天", command=on_restore)
+        if on_check_updates is not None:
+            self.menu.add_command(label="检查更新", command=on_check_updates)
         self._qq_menu_index = None
         if on_qq_settings is not None:
             self.menu.add_command(label="QQ 接入模式…", command=on_qq_settings)

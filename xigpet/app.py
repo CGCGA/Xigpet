@@ -32,6 +32,9 @@ from .history_window import HistoryWindow
 from .qq_bridge import QQBridge, QQSettings
 from .qq_settings import QQSettingsWindow
 from scripts.screen_capture import ScreenCapturePrompt, screen_request_handler
+from scripts import updater
+from .update_window import UpdateWindow
+from .version import VERSION
 
 IDLE_STATUS = "在这里，陪你聊聊"
 MIN_REPLY_GAP = 1.0
@@ -68,6 +71,10 @@ class PetWindow(ConversationMixin, tk.Tk):
         self._attachments_loading = False
         self._attachment_thumbnails = []
         self._tray = None
+        self._update_window = None
+        self._update_busy = False
+        self._update_cancel = threading.Event()
+        self._prepared_update = None
         self._desktop = None
         self._desktop_enabled = DesktopPet.mode_enabled(pet_core.KEY_FILE.parent / "desktop_pet.json")
         self._tray_start_job = None
@@ -115,6 +122,9 @@ class PetWindow(ConversationMixin, tk.Tk):
         if self._closing:
             return
         self._closing = True
+        self._update_cancel.set()
+        if self._update_window is not None and self._update_window.winfo_exists():
+            self._update_window.destroy()
         self._clear_screen_prompt()
         self._pending_tool_screen_reason = None
         if self._qq_bridge is not None:
@@ -154,7 +164,7 @@ class PetWindow(ConversationMixin, tk.Tk):
             ), pet_core.KEY_FILE.parent / "desktop_pet.json", self._restore_from_tray, self.destroy,
                 animation_dirs=(pet_core.ROOT / "animation", pet_core.BUNDLED_ROOT / "animation"),
                 on_qq_settings=self._open_qq_settings,
-                on_close_pet=lambda: self._set_desktop_enabled(False))
+                on_close_pet=lambda: self._set_desktop_enabled(False), on_check_updates=self._check_updates)
             self._desktop.set_qq_enabled(self._qq_bridge is not None)
         self._background = True
         if self._history_window is not None and self._history_window.winfo_exists():
@@ -415,6 +425,10 @@ class PetWindow(ConversationMixin, tk.Tk):
                                          bg=WHITE, fg=BLUE, activebackground=PAGE, relief="flat",
                                          bd=0, font=(FONT, 9), cursor="hand2", padx=10, pady=9)
         self.pet_mode_button.pack(side="right")
+        self.update_button = tk.Button(header, text="检查更新", command=self._check_updates,
+                                        bg=WHITE, fg=BLUE, relief="flat", bd=0, font=(FONT, 9),
+                                        cursor="hand2", padx=8, pady=9)
+        self.update_button.pack(side="right")
         tk.Frame(self, bg=LINE, height=1).pack(fill="x")
         composer_area = tk.Frame(self, bg=PAGE, padx=24, pady=14)
         composer_area.pack(side="bottom", fill="x")
@@ -651,7 +665,7 @@ class PetWindow(ConversationMixin, tk.Tk):
 
     def _maybe_start_qq_reply(self) -> None:
         if (self._closing or self._qq_bridge is None or not self._qq_pending or self.busy or self.planning
-                or self._attachments_loading or self._capturing_screen or self._screen_tool_reason):
+                or self._attachments_loading or self._capturing_screen or self._screen_tool_reason or self._prepared_update is not None):
             return
         if not pet_core.has_key():
             self._set_qq_status("QQ 消息已留档，等待填写 DeepSeek API Key 后回复。")
@@ -704,14 +718,103 @@ class PetWindow(ConversationMixin, tk.Tk):
         except OSError as exc:
             messagebox.showerror("打开文件失败", str(exc), parent=self)
 
+    def _cancel_update(self) -> None:
+        self._update_cancel.set()
+        self._prepared_update = None
+        self._update_busy = False
+
+    def _check_updates(self) -> None:
+        if self._update_busy:
+            if self._update_window is not None and self._update_window.winfo_exists():
+                self._update_window.lift()
+            return
+        if self._update_window is not None and self._update_window.winfo_exists():
+            self._update_window.destroy()
+        self._update_cancel = threading.Event()
+        self._update_busy = True
+        self._update_window = UpdateWindow(self, self._cancel_update)
+        threading.Thread(target=self._update_worker, args=(self._update_cancel,), daemon=True).start()
+
+    def _update_worker(self, cancel) -> None:
+        def emit(kind, value):
+            self.events.put((kind, (cancel, value)))
+        try:
+            info = updater.check_for_update()
+            if info is None:
+                emit("update_finished", f"当前已是最新版本 {VERSION}。")
+                return
+            emit("update_status", f"发现 {info.version}，正在下载更新…")
+            last_percent = -1
+            def progress(received, total):
+                nonlocal last_percent
+                percent = int(received * 100 / total) if total else int(received / (1024 * 1024))
+                if percent != last_percent:
+                    last_percent = percent
+                    detail = f"{percent}%" if total else f"{percent} MiB"
+                    emit("update_status", f"正在下载 {info.version}：{detail}")
+            prepared = updater.prepare_update(pet_core.ROOT, info, progress, cancel)
+            emit("update_ready", prepared)
+        except updater.UpdateCancelled:
+            emit("update_finished", "已取消更新。")
+        except Exception as exc:
+            message = str(exc) if isinstance(exc, updater.UpdateError) else "更新未能完成，请检查网络和程序目录权限后重试。"
+            emit("update_finished", message)
+
+    def _handle_update_event(self, kind, cancel, value) -> None:
+        if cancel is not self._update_cancel:
+            return
+        if cancel.is_set():
+            self._update_busy = False
+            self._prepared_update = None
+            return
+        if kind == "update_finished" or cancel.is_set():
+            self._update_busy = False
+            self._prepared_update = None
+        elif kind == "update_ready":
+            self._prepared_update = value
+            value = f"{value.version} 已下载并校验，等待当前任务结束后自动重启更新。"
+        if self._update_window is not None and self._update_window.winfo_exists():
+            self._update_window.show_status(str(value), finished=kind == "update_finished")
+
+    def _maybe_apply_update(self) -> bool:
+        if self._prepared_update is None or self._update_cancel.is_set() or self._closing:
+            return False
+        if self.busy or self.planning or self._capturing_screen or self._attachments_loading or self._pending_replies:
+            return False
+        try:
+            updater.launch_installer(pet_core.ROOT, self._prepared_update)
+        except Exception:
+            self._prepared_update = None
+            self._update_busy = False
+            if self._update_window is not None and self._update_window.winfo_exists():
+                self._update_window.show_status("无法启动更新安装程序，当前程序未改变。请检查目录权限。", finished=True)
+            return False
+        self.destroy()
+        return True
+
+    def _show_update_result(self) -> None:
+        import json
+        path = pet_core.ROOT / ".updates" / "result.json"
+        if not path.is_file():
+            return
+        try:
+            result = json.loads(path.read_text(encoding="utf-8"))
+            path.unlink()
+            if result.get("success"):
+                messagebox.showinfo("更新完成", f"已更新至 {VERSION}，你的设定和记忆已保留。", parent=self)
+            else:
+                messagebox.showerror("更新未完成", "更新失败，已尝试恢复原程序。你的设定和记忆未参与更新。\n" + str(result.get("error", ""))[:300], parent=self)
+        except (OSError, ValueError, AttributeError):
+            logging.warning("Could not read update result")
+
     def _schedule_tick(self) -> None:
         now = datetime.now().astimezone()
         plan = pet_core.daily_plan()
         has_today = plan.has_day(now.date().isoformat())
-        if not plan.has_generated(now.date().isoformat()) and not self.planning and time.monotonic() >= self.next_plan_attempt:
+        if self._prepared_update is None and not plan.has_generated(now.date().isoformat()) and not self.planning and time.monotonic() >= self.next_plan_attempt:
             self.planning = True
             threading.Thread(target=self._plan_worker, daemon=True).start()
-        if has_today and not self.busy and not self.planning and not self._capturing_screen and not self._screen_tool_reason and time.monotonic() >= self.next_due_attempt:
+        if self._prepared_update is None and has_today and not self.busy and not self.planning and not self._capturing_screen and not self._screen_tool_reason and time.monotonic() >= self.next_due_attempt:
             event = plan.due(now)
             if event:
                 self._begin_turn()
@@ -844,7 +947,11 @@ class PetWindow(ConversationMixin, tk.Tk):
                 kind, value = self.events.get_nowait()
             except queue.Empty:
                 break
-            if kind in {"qq_message", "qq_status", "qq_send_error"}:
+            if kind.startswith("update_"):
+                self._handle_update_event(kind, *value)
+            elif kind == "tray_check_updates":
+                self._check_updates()
+            elif kind in {"qq_message", "qq_status", "qq_send_error"}:
                 bridge, payload = value
                 if bridge is not self._qq_bridge:
                     continue
@@ -918,6 +1025,8 @@ class PetWindow(ConversationMixin, tk.Tk):
                 self._worker_done = True
                 self._pending_replies.append((kind, value))
                 self._schedule_delivery()
+        if self._maybe_apply_update():
+            return
         self._maybe_start_qq_reply()
         delay = 80 if self.busy or self._attachments_loading else (500 if self._background else 250)
         self.after(delay, self._drain_events)
@@ -925,7 +1034,9 @@ class PetWindow(ConversationMixin, tk.Tk):
 
 def main() -> None:
     """Start the desktop chat application."""
-    PetWindow().mainloop()
+    window = PetWindow()
+    window.after(500, window._show_update_result)
+    window.mainloop()
 
 
 if __name__ == "__main__":

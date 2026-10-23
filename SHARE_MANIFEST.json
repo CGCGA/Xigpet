@@ -8,8 +8,8 @@
     "sha256": "80cad5afa95cf50488f3727707098c8bd5008e6dc7ea0553638709e7ee00b852"
   },
   ".gitignore": {
-    "bytes": 351,
-    "sha256": "d281e65b55c20751a227cf549288d405fa6bb0668279e45536fe4953d7bfb6cd"
+    "bytes": 361,
+    "sha256": "9be1f4f0fa311ec459416dd4686e24da81e6494d7073953aa6802aba42c3451b"
   },
   "animation/float.gif": {
     "bytes": 4604138,
@@ -36,8 +36,8 @@
     "sha256": "960a76655791e8855474b86d054af3437661ecfa35fed940fd514e7c3e072adc"
   },
   "main.py": {
-    "bytes": 119,
-    "sha256": "bd17614d16f67c281de1d0ff8753a9706eeeb33cbd2c491d4f1fc19e366cabcd"
+    "bytes": 291,
+    "sha256": "c5036c6c6fa2efd51d2260f48dc83cca5829febd89bdd8b4c8a28fd743a0ad0d"
   },
   "media/comfort.png": {
     "bytes": 3588,
@@ -108,16 +108,16 @@
     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   },
   "packaging/Xigpet.spec": {
-    "bytes": 1032,
-    "sha256": "83a4b4356858302e637fde07db5118d8d36cc8d75d19f650a2d5377465263ab2"
+    "bytes": 1083,
+    "sha256": "01a835f48f7c24c158cdeb04e3214204fb9f7769a1a873fa203aaf55761ba4c4"
   },
   "plans/.gitkeep": {
     "bytes": 0,
     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   },
   "README.md": {
-    "bytes": 4079,
-    "sha256": "bb788cad7e9f139fb8e9a96632b47aa95d57d1fddc0b818a8c619591274fdda5"
+    "bytes": 5785,
+    "sha256": "24bbee99caa38b3c6205149791fb199fa89beece171f1b99c9688d31bd4edf43"
   },
   "requirements.txt": {
     "bytes": 83,
@@ -126,6 +126,10 @@
   "scripts/__init__.py": {
     "bytes": 56,
     "sha256": "aa1d7c5bc688ad98eaca18986223c665d2979ae236cb1bf725c02b12c04b1bb9"
+  },
+  "scripts/build_release.py": {
+    "bytes": 2563,
+    "sha256": "14a172c3ff5ebb53768ffc93be80c921b06ec1a5885cc1bb553331fea962d604"
   },
   "scripts/drawing_tools.py": {
     "bytes": 16060,
@@ -144,12 +148,20 @@
     "sha256": "2a8f0296a88371ff4842878930efc4e80b883df7d75dfbab21780ebc72b5cfc7"
   },
   "scripts/prepare_share.py": {
-    "bytes": 10950,
-    "sha256": "f32ebe2a30faf1d3a1277d4f43189348ed792c23771f163b9d611b7e08610555"
+    "bytes": 12682,
+    "sha256": "d0983f598a88848eb045fa3d21062637a0ecbe8581938fd0117c8926b4e810b0"
   },
   "scripts/screen_capture.py": {
     "bytes": 3297,
     "sha256": "93edd63465c6dbde6da653fa6d48356a81c7ae6ca02d4def62321905b144f73d"
+  },
+  "scripts/update_installer.py": {
+    "bytes": 7823,
+    "sha256": "8815a6d4ec4b75503a727485690b9e113b4e5d4e9adcee8cef2c5359ba726fe8"
+  },
+  "scripts/updater.py": {
+    "bytes": 12490,
+    "sha256": "86c569956d82f8ecbe0a65ab45a5b957c75a9766280e2a61e3f29741f1ef7c34"
   },
   "scripts/web_tools.py": {
     "bytes": 8605,
@@ -199,6 +211,14 @@
     "bytes": 3717,
     "sha256": "3ffe07efcaa147e07c4c39361adf9610b15cd6a99b4bc5a980eb484f9829072e"
   },
+  "tests/test_updater.py": {
+    "bytes": 15800,
+    "sha256": "7be913fce2c207b1ebe6c47d52b968a66bb28ea1a73290737d1812b4d2e71bf2"
+  },
+  "VERSION.json": {
+    "bytes": 21,
+    "sha256": "fc6cf2a26f6c8167d13b66d016e4c1dbdc138a95c076e636bd2a3111cb5f8992"
+  },
   "Xig.png": {
     "bytes": 2072878,
     "sha256": "8186bee85ab25fb713a25dfb7227114d39f0b1d6083a5abb6359e5f1e195721e"
@@ -212,8 +232,8 @@
     "sha256": "15ede2e1e0b911c6a8c2ef1109bfdf0c343e53679cd8377197b63b929370799a"
   },
   "xigpet/app.py": {
-    "bytes": 44058,
-    "sha256": "f8bc438bb06c860561614c211ab0821ed98cb0fe528d22b717078d8a6a965785"
+    "bytes": 49616,
+    "sha256": "29ee320cf0b362428463144456d0ff2bd3e7de38339842607446b8c432ecd068"
   },
   "xigpet/chat_history.py": {
     "bytes": 5194,
@@ -232,8 +252,8 @@
     "sha256": "4b0c3fcd09b808c038fbd55a5dca179837db31f92777e7465a917ac89dcfbba2"
   },
   "xigpet/desktop_pet.py": {
-    "bytes": 22925,
-    "sha256": "ded4d28481607554f7e24384b74227b772adcd35b07a6fdb30131d2383b4e9f2"
+    "bytes": 23071,
+    "sha256": "db88e7fb5d1f5eec295349af501dc6281256996c0b8d217fc12ba092c4ae1937"
   },
   "xigpet/history_window.py": {
     "bytes": 10094,
@@ -268,8 +288,16 @@
     "sha256": "b7312570d29dc3d3042b6887711414014cf067b1498094318218bfcf24607bec"
   },
   "xigpet/system_tray.py": {
-    "bytes": 2814,
-    "sha256": "54468e538474bdfc4d5f7ab77db1905dc5d1e9b59efad89bc1ffe6a7703afd03"
+    "bytes": 2982,
+    "sha256": "c7c0aec0e3867a0ef1e974980b19951225b8a071a358800dc5656875fe5b3d01"
+  },
+  "xigpet/update_window.py": {
+    "bytes": 1875,
+    "sha256": "57234effcba7be00541a26a9fd4ce15a0a19694c28f922e57a1e36dc11935daa"
+  },
+  "xigpet/version.py": {
+    "bytes": 311,
+    "sha256": "61c226eca74204fac8e6c11bf8a173919b132ba04bfdf2bb0b614b0b83f18c64"
   },
   "启动聊天宠物.bat": {
     "bytes": 324,

@@ -12,6 +12,7 @@ a = Analysis(
     pathex=[str(PROJECT_ROOT)],
     binaries=[],
     datas=[
+        (str(PROJECT_ROOT / 'VERSION.json'), '.'),
         (str(PROJECT_ROOT / 'Xig.png'), '.'),
         (str(PROJECT_ROOT / 'animation' / 'relax.gif'), 'animation'),
         (str(PROJECT_ROOT / 'animation' / 'float.gif'), 'animation'),

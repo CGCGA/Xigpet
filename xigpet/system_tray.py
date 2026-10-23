@@ -29,6 +29,7 @@ class SystemTray:
                 pystray.MenuItem("打开聊天", self._restore, default=True),
                 pystray.MenuItem("桌面宠物", self._toggle_pet, checked=lambda _item: self._pet_enabled),
                 pystray.MenuItem("QQ 接入设置…", self._qq_settings),
+                pystray.MenuItem("检查更新", self._check_updates),
                 pystray.Menu.SEPARATOR,
                 pystray.MenuItem("退出", self._exit),
             ),
@@ -63,6 +64,9 @@ class SystemTray:
 
     def _qq_settings(self, _icon, _item):
         self.events.put(("tray_qq_settings", ""))
+
+    def _check_updates(self, _icon, _item):
+        self.events.put(("tray_check_updates", ""))
 
     def set_pet_enabled(self, enabled):
         self._pet_enabled = bool(enabled)

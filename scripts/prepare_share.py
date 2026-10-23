@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-TOP_FILES = ("main.py", "requirements.txt", ".editorconfig", "Xig.png",
+TOP_FILES = ("main.py", "requirements.txt", ".editorconfig", "Xig.png", "VERSION.json",
              "启动聊天宠物.bat", "打包EXE.bat", "packaging/Xigpet.spec")
 MEDIA = {
     "comfort.png": ("抱抱", "安慰 温柔"), "happy.png": ("开心", "开心 庆祝"),
@@ -30,6 +30,7 @@ SETTING_EXAMPLE = """# 小希的设定
 不预设用户姓名、生日、QQ、关系或其他个人信息，由用户自己补充。
 """
 GITIGNORE = """__pycache__/
+.updates/
 *.py[cod]
 .pytest_cache/
 .venv/
@@ -111,6 +112,21 @@ python -m pip install -r requirements.txt pyinstaller
 ```
 
 双击 `打包EXE.bat`，会在项目根目录生成 `Xigpet.exe`。给别人分发时同时带上公开的 `config/setting.example.md`、`media/` 自带表情、`animation/` 和 `Xig.png`，让对方自行填写 Key。不要附带你运行后产生的真实配置与数据。
+
+## 检查更新
+
+聊天窗口、桌宠右键和托盘菜单都有“检查更新”。发现新版本后自动下载、校验；等当前回复和计划任务完成后，程序退出，由独立更新助手安装并重新打开。取消、网络失败或校验失败都不会覆盖当前程序；文件替换失败会回滚。API Key、人设、QQ 配置、记忆、聊天、截图、笔记、计划和个人画作不属于更新文件。
+
+源码版读取本仓库主分支的 `VERSION.json`，固定到同一个提交下载源码 ZIP，并按 `SHARE_MANIFEST.json` 校验文件。exe 版读取 GitHub Releases 最新正式版本，只接受对应的 Windows 更新 ZIP 及 SHA-256；仅推送源码不会产生新的 exe。当前版本号见 `VERSION.json`，版本号只有变大才更新。
+
+作者发布下一版时：
+
+1. 修改 `VERSION.json`，例如从 `1.1.0` 改为 `1.2.0`。
+2. 生成新的干净分享副本，将源码和重新生成的 `SHARE_MANIFEST.json` 一起上传主分支，源码用户即可检查到更新。
+3. 若需要更新 exe 用户，先用本版打包脚本生成带版本信息的 `Xigpet.exe`，再执行 `python -m scripts.build_release --exe Xigpet.exe`。
+4. 在 GitHub Releases 创建对应的正式版本，例如标签 `v1.2.0`，上传生成的 `dist/Xigpet-v1.2.0-windows-x64.zip` 和同名 `.zip.sha256` 文件。不要改更新包文件名，不要附带真实配置和运行数据。
+
+更新缓存、结果与旧程序备份位于本机 `.updates/`，已被 Git 忽略。程序必须位于可写目录；源码版仍需本机已有所需 Python 依赖。这个功能首次使用需要安装包含更新入口的新版本，旧 exe 不会自行获得入口。
 
 ## 测试与再次分享
 
