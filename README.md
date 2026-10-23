@@ -72,4 +72,4 @@ python -B -m unittest discover -s tests -v
 python -m scripts.prepare_share --output tem
 ```
 
-分享工具按白名单复制源码和自带资源，重新生成通用模板，并排除私人文件。目标目录已存在时会停止，不会覆盖已有内容。`SHARE_MANIFEST.json` 记录分享文件的大小与 SHA-256，用于核对副本。
+分享工具按白名单复制源码和自带资源，重新生成通用模板，并排除私人文件。目标目录已存在时会停止，不会覆盖已有内容。`SHARE_MANIFEST.json` 记录分享文件的大小与 SHA-256，用于核对副本。。

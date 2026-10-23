@@ -116,8 +116,8 @@
     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   },
   "README.md": {
-    "bytes": 5785,
-    "sha256": "24bbee99caa38b3c6205149791fb199fa89beece171f1b99c9688d31bd4edf43"
+    "bytes": 5788,
+    "sha256": "05bf3e961fb7145d85748d40d1e5dcbb1fbb1caba61cf88c7149cc29e7e3ef88"
   },
   "requirements.txt": {
     "bytes": 83,
@@ -217,7 +217,7 @@
   },
   "VERSION.json": {
     "bytes": 21,
-    "sha256": "fc6cf2a26f6c8167d13b66d016e4c1dbdc138a95c076e636bd2a3111cb5f8992"
+    "sha256": "8c2b5a06267d466e3eb7460faa3e8bf8a1b42e8f3f69f5eee37a2181e8e993fe"
   },
   "Xig.png": {
     "bytes": 2072878,
