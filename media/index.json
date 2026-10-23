@@ -1,0 +1,72 @@
+{
+  "comfort.png": {
+    "title": "抱抱",
+    "mood": "安慰 温柔",
+    "keywords": "安慰 温柔"
+  },
+  "happy.png": {
+    "title": "开心",
+    "mood": "开心 庆祝",
+    "keywords": "开心 庆祝"
+  },
+  "hungry.png": {
+    "title": "开饭啦",
+    "mood": "吃饭 饿了",
+    "keywords": "吃饭 饿了"
+  },
+  "surprised.png": {
+    "title": "惊讶",
+    "mood": "惊讶 好奇",
+    "keywords": "惊讶 好奇"
+  },
+  "wink.gif": {
+    "title": "眨眼",
+    "mood": "俏皮 开心",
+    "keywords": "俏皮 开心"
+  },
+  "xig_afraid.png": {
+    "title": "小希害怕",
+    "mood": "害怕 紧张",
+    "keywords": "害怕 紧张"
+  },
+  "xig_angry.png": {
+    "title": "小希生气",
+    "mood": "生气 不满",
+    "keywords": "生气 不满"
+  },
+  "xig_cry.png": {
+    "title": "小希哭哭",
+    "mood": "难过 委屈",
+    "keywords": "难过 委屈"
+  },
+  "xig_curious.png": {
+    "title": "小希好奇",
+    "mood": "好奇 惊讶",
+    "keywords": "好奇 惊讶"
+  },
+  "xig_happy.png": {
+    "title": "小希开心",
+    "mood": "开心 庆祝",
+    "keywords": "开心 庆祝"
+  },
+  "xig_love.png": {
+    "title": "小希喜欢",
+    "mood": "喜欢 温柔",
+    "keywords": "喜欢 温柔"
+  },
+  "xig_shy.png": {
+    "title": "小希害羞",
+    "mood": "害羞 撒娇",
+    "keywords": "害羞 撒娇"
+  },
+  "xig_smile.png": {
+    "title": "小希微笑",
+    "mood": "微笑 鼓励",
+    "keywords": "微笑 鼓励"
+  },
+  "xig_tire.png": {
+    "title": "小希困困",
+    "mood": "困了 疲惫",
+    "keywords": "困了 疲惫"
+  }
+}
