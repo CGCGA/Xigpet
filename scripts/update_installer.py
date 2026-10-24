@@ -15,7 +15,7 @@ import sys
 import time
 
 
-ROOT_FILES = {"main.py", "VERSION.json", "README.md", "SHARE_MANIFEST.json", "requirements.txt",
+ROOT_FILES = {"main.py", "VERSION.json", "README.md", "SHARE_MANIFEST.json", "requirements.txt", "THIRD_PARTY_NOTICES.md", "宠物定制指南.md",
               ".editorconfig", ".gitattributes", ".gitignore", "Xig.png", "Xigpet.exe",
               "启动聊天宠物.bat", "打包EXE.bat", "packaging/Xigpet.spec", "media/index.json"}
 

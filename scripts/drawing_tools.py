@@ -3,59 +3,39 @@
 from __future__ import annotations
 
 import ast
+import hashlib
+import json
 import math
 import operator
-import os
 import random
 import re
+import threading
 import time
 import uuid
-from functools import lru_cache
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
 from PIL.PngImagePlugin import PngInfo
 
-from .media_tools import register_drawing
+from .media_tools import register_drawing, media_path, is_drawing
+from .drawing_help import DRAWING_HELP
+from .drawing_scene import (DrawingError, MAX_NODES, MAX_LAYERS, MAX_SOURCE_BYTES,
+                            new_scene, normalize_node, identifier, number, color,
+                            validate_scene, render_scene, apply_edits)
 
 
-DRAWING_HELP = """通过 draw_picture 创作程序绘图。传 title（给作品取名）、code、可选 keywords（主题标签）、mood（情绪标签）、width/height（256–1024，默认768）。
-code 是受限 Python 绘图语句，不需要 import，不要创建 Image 或保存文件，程序会自动保存并发送 PNG。
-已有 W、H、pi、tau；支持变量、四则运算、if、for/range（单次最多500项）、列表/元组、列表.append、下标和简单 f-string。
-可调用 draw.rectangle、draw.rounded_rectangle、draw.ellipse、draw.polygon、draw.line、draw.arc、draw.pieslice、draw.point，参数与 Pillow 对应；draw.text((x,y), '文字', fill='颜色', font_size=24, anchor='mm')。
-background('颜色') 设置底色。支持 sin/cos/sqrt/radians（也可 math.sin 等）、randint/uniform（也可 random.uniform）、min/max/abs/round/int/float/str/len。
-没有 import、while、函数/类定义、文件、网络、进程、任意属性访问。坐标数值不得超过1000000；最多2500次绘图、30000步计算，超限会失败。
-示例：
-background('#eef7ff')
-draw.ellipse((W*.25,H*.2,W*.75,H*.7),fill='#9ac9ef',outline='#529bd3',width=4)
-for i in range(5):
-    x=80+i*140
-    draw.line([(x,600),(x+30,550)],fill='#88b58d',width=6)
-draw.text((W/2,H*.83),'送给你',fill='#29485e',font_size=32,anchor='mm')
-成功后自然说出画了什么，图片由程序单独发送；失败时根据错误修改代码，不能声称已经画好。"""
-
-
-class DrawingError(ValueError):
-    pass
-
-
-@lru_cache(maxsize=64)
-def _font(size):
-    fonts = Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts"
-    for filename in ("msyh.ttc", "simhei.ttf", "arial.ttf"):
-        try:
-            return ImageFont.truetype(str(fonts / filename), size)
-        except OSError:
-            pass
-    return ImageFont.load_default()
+_DRAWING_LOCK = threading.RLock()
 
 
 class DrawingProgram:
     def __init__(self, width=768, height=768):
         if any(type(v) is not int or not 256 <= v <= 1024 for v in (width, height)):
             raise DrawingError("画布宽高须为 256–1024 的整数。")
-        self.image = Image.new("RGB", (width, height), "#f1f7fc")
-        self.draw = ImageDraw.Draw(self.image)
+        self.scene = new_scene(width, height)
+        self.layer = "base"
+        self._ids = set()
+        self._source_bytes = 1024
+        self._random = random.Random()
+        self._background_set = False
         self.variables = {"W": width, "H": height, "pi": math.pi, "tau": math.tau}
         self.steps = self.draws = 0
         self.deadline = time.monotonic() + 8
@@ -196,7 +176,7 @@ class DrawingProgram:
         functions = {"min": min, "max": max, "abs": abs, "round": round, "int": int,
                      "float": float, "str": str, "len": len, "sin": math.sin,
                      "cos": math.cos, "sqrt": math.sqrt, "radians": math.radians,
-                     "uniform": random.uniform, "randint": random.randint}
+                     "uniform": self._random.uniform, "randint": self._random.randint}
         if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
             owner, name = node.value.id, node.attr
             if owner == "draw":
@@ -213,7 +193,24 @@ class DrawingProgram:
                 return None
         if isinstance(node, ast.Name):
             if node.id == "background" and len(args) == 1 and not kwargs:
-                return self._primitive("rectangle", [(0, 0, *self.image.size)], {"fill": args[0]})
+                self.scene["background"] = list(color(args[0]))
+                self._background_set = True
+                return None
+            if node.id == "layer" and len(args) == 1 and not set(kwargs) - {"opacity"}:
+                name = identifier(args[0])
+                existing = next((item for item in self.scene["layers"] if item["id"] == name), None)
+                if existing is None:
+                    if len(self.scene["layers"]) >= MAX_LAYERS:
+                        raise DrawingError("最多16个图层。")
+                    existing = {"id": name, "opacity": 1, "visible": True}
+                    self.scene["layers"].append(existing)
+                if "opacity" in kwargs:
+                    existing["opacity"] = number(kwargs["opacity"], 0, 1)
+                self.layer = name
+                return None
+            if node.id == "end_layer" and not args and not kwargs:
+                self.layer = "base"
+                return None
             if node.id == "range" and not kwargs and all(type(arg) is int for arg in args):
                 value = range(*args)
                 if len(value) > 500:
@@ -225,31 +222,25 @@ class DrawingProgram:
 
     def _primitive(self, name, args, kwargs):
         self.draws += 1
-        if self.draws > 2500:
-            raise DrawingError("最多2500次绘图调用。")
-        allowed = {"rectangle", "rounded_rectangle", "ellipse", "polygon", "line", "arc", "pieslice", "point", "text"}
-        if name not in allowed or not args:
-            raise DrawingError("不支持此绘图方法。")
-        if any(key not in {"fill", "outline", "width", "radius", "joint", "start", "end", "font_size", "anchor", "align"} for key in kwargs):
-            raise DrawingError("绘图参数不在允许列表中。")
-        if "width" in kwargs and (type(kwargs["width"]) is not int or not 1 <= kwargs["width"] <= 100):
-            raise DrawingError("线宽须为1–100。")
-        if "radius" in kwargs and not 0 <= kwargs["radius"] <= 512:
-            raise DrawingError("圆角半径须为0–512。")
-        if len(args[0]) > 300:
-            raise DrawingError("单次绘图的点过多。")
-        if name == "text":
-            if len(args) != 2 or not isinstance(args[1], str) or len(args[1]) > 200:
-                raise DrawingError("文字绘图须提供坐标和不超过200字的文字。")
-            size = kwargs.pop("font_size", 24)
-            if type(size) is not int or not 8 <= size <= 96:
-                raise DrawingError("字号须为8–96。")
-            kwargs["font"] = _font(size)
-        method = getattr(self.draw, name)  # name is restricted to the fixed set above.
-        method(*args, **kwargs)
+        if self.draws > MAX_NODES:
+            raise DrawingError("最多2500个图形。")
+        node_id = kwargs.pop("id", None)
+        if node_id is None:
+            node_id = f"shape_{self.draws}"
+            while node_id in self._ids:
+                node_id += "_"
+        identifier(node_id)
+        if node_id in self._ids:
+            raise DrawingError("图形 ID 重复：" + node_id)
+        node = normalize_node(name, args, kwargs, node_id, self.layer)
+        self._source_bytes += len(json.dumps(node, ensure_ascii=False).encode("utf-8"))
+        if self._source_bytes > MAX_SOURCE_BYTES:
+            raise DrawingError("绘画源数据超过2 MiB，请减少图形或路径点。")
+        self.scene["nodes"].append(node)
+        self._ids.add(node_id)
         return None
 
-    def run(self, code):
+    def run(self, code, *, render=True):
         if not isinstance(code, str) or not code.strip() or len(code) > 16000:
             raise DrawingError("绘图代码须为1–16000个字符。")
         code = re.sub(r"^```(?:python)?\s*\n|\n```\s*$", "", code.strip())
@@ -258,41 +249,130 @@ class DrawingProgram:
             if sum(1 for _ in ast.walk(tree)) > 3000:
                 raise DrawingError("绘图代码结构过大。")
             self._block(tree.body)
-            if not self.draws:
+            if not self.draws and not self._background_set:
                 raise DrawingError("代码没有画任何内容。")
-            return self.image
+            return render_scene(self.scene) if render else self.scene
         except DrawingError:
             raise
         except (ValueError, TypeError, SyntaxError, ArithmeticError, IndexError, RecursionError) as exc:
             raise DrawingError(f"绘图代码错误：{str(exc)[:250]}") from exc
 
 
-def draw_picture(folder: Path, *, title, code, width=768, height=768, keywords="", mood=""):
+def _save_artwork(folder, scene, *, title, keywords="", mood="", parent=None):
     if not isinstance(title, str) or not title.strip() or len(title) > 100:
         raise DrawingError("请提供1–100字的绘画标题。")
-    program = DrawingProgram(width, height)
-    image = program.run(code)
-    if folder.is_symlink():
-        raise DrawingError("绘画输出目录不能是符号链接。")
+    scene = validate_scene(scene)
+    folder = Path(folder)
     output = folder / "drawings"
-    if output.is_symlink():
+    if folder.is_symlink() or output.is_symlink():
         raise DrawingError("绘画输出目录不能是符号链接。")
     output.mkdir(parents=True, exist_ok=True)
+    payload = {"format": 1, "title": title.strip(), "keywords": str(keywords or title)[:300],
+               "mood": str(mood or "")[:80], "parent": parent, "scene": scene}
+    data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    if len(data) > MAX_SOURCE_BYTES:
+        raise DrawingError("绘画源数据超过2 MiB，请减少图形或路径点。")
     safe_title = re.sub(r"[^\w\u4e00-\u9fff -]", "_", title.strip())[:40].strip() or "untitled"
-    name = f"drawing_{safe_title}_{uuid.uuid4().hex}.png"
-    filename = "drawings/" + name
-    path = output / name
-    written = False
+    path = output / f"drawing_{safe_title}_{uuid.uuid4().hex}.png"
+    source = path.with_suffix(".drawing.json")
+    created = []
+    image = render_scene(scene)
     try:
         metadata = PngInfo()
         metadata.add_text("Title", title.strip())
-        with path.open("xb") as target:
-            written = True
-            image.save(target, format="PNG", pnginfo=metadata)
-        register_drawing(folder, filename, title=title.strip(), keywords=keywords, mood=mood)
+        metadata.add_text("DrawingSource", source.name)
+        for target, binary in ((source, data), (path, None)):
+            with target.open("xb") as stream:
+                created.append(target)
+                if binary is None:
+                    image.save(stream, format="PNG", pnginfo=metadata)
+                else:
+                    stream.write(binary)
+        filename = "drawings/" + path.name
+        register_drawing(folder, filename, title=title.strip(), keywords=payload["keywords"], mood=payload["mood"])
     except (OSError, ValueError) as exc:
-        if written:
-            path.unlink(missing_ok=True)
-        raise DrawingError("无法保存绘画图片或作品索引。") from exc
-    return {"sent": filename, "title": title.strip(), "keywords": str(keywords or title), "mood": str(mood),
-            "width": width, "height": height}
+        for target in created:
+            target.unlink(missing_ok=True)
+        raise DrawingError("无法保存绘画图片或源数据：" + str(exc)[:160]) from exc
+    finally:
+        image.close()
+    return {"sent": filename, "title": title.strip(), "keywords": payload["keywords"], "mood": payload["mood"],
+            "width": scene["width"], "height": scene["height"], "editable": True,
+            "revision": hashlib.sha256(data).hexdigest(), "node_count": len(scene["nodes"]),
+            "layer_count": len(scene["layers"]), "parent": parent}
+
+
+def draw_picture(folder: Path, *, title, code, width=768, height=768, keywords="", mood=""):
+    # Lock before allocating any pixel buffers. Chat, QQ and idle requests share
+    # this renderer, so concurrent callers queue without duplicating canvases.
+    with _DRAWING_LOCK:
+        program = DrawingProgram(width, height)
+        program.run(code, render=False)
+        return _save_artwork(folder, program.scene, title=title, keywords=keywords, mood=mood)
+
+
+def _load_artwork(folder, filename):
+    try:
+        path = media_path(Path(folder), filename)
+        if not is_drawing(filename) or path.suffix.lower() != ".png":
+            raise DrawingError("请选择自己的 PNG 画作。")
+        source = path.with_suffix(".drawing.json")
+        if source.is_symlink():
+            raise DrawingError("绘画源文件不能是符号链接。")
+        if not source.is_file():
+            raise DrawingError("这幅旧画没有可编辑源数据；可以继续发送原图，或重新创作。")
+        with source.open("rb") as stream:
+            data = stream.read(MAX_SOURCE_BYTES + 1)
+        if len(data) > MAX_SOURCE_BYTES:
+            raise DrawingError("绘画源文件超过2 MiB。")
+        payload = json.loads(data)
+        if not isinstance(payload, dict) or payload.get("format") != 1:
+            raise DrawingError("绘画源文件格式无效。")
+        payload["scene"] = validate_scene(payload.get("scene"))
+        return payload, hashlib.sha256(data).hexdigest(), "drawings/" + path.name
+    except DrawingError:
+        raise
+    except (OSError, ValueError, TypeError, KeyError, RecursionError) as exc:
+        raise DrawingError("无法读取绘画源数据：" + str(exc)[:160]) from exc
+
+
+def read_drawing(folder: Path, filename, *, ids=None, offset=0, limit=30):
+    if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 40:
+        raise DrawingError("offset须为非负整数，limit须为1–40。")
+    if ids is not None and (not isinstance(ids, list) or len(ids) > 40):
+        raise DrawingError("ids最多40项。")
+    if ids is not None:
+        ids = [identifier(item) for item in ids]
+    with _DRAWING_LOCK:
+        payload, revision, filename = _load_artwork(folder, filename)
+    scene = payload["scene"]
+    nodes = scene["nodes"]
+    if ids is not None:
+        missing = set(ids) - {node["id"] for node in nodes}
+        if missing:
+            raise DrawingError("找不到图形 ID：" + ", ".join(sorted(missing)))
+        nodes = [node for node in nodes if node["id"] in ids]
+    selected, cost = [], 0
+    for node in nodes[offset:offset + limit]:
+        size = len(json.dumps(node, ensure_ascii=False))
+        if selected and cost + size > 20000:
+            break
+        selected.append(node)
+        cost += size
+    next_offset = offset + len(selected)
+    return {"file": filename, "title": payload.get("title", "一幅小画"), "revision": revision,
+            "width": scene["width"], "height": scene["height"], "background": scene["background"],
+            "layers": scene["layers"], "node_count": len(scene["nodes"]), "matched": len(nodes),
+            "nodes": selected, "next_offset": next_offset if next_offset < len(nodes) else None}
+
+
+def edit_drawing(folder: Path, filename, *, expect_revision, ops, title=None):
+    with _DRAWING_LOCK:
+        payload, revision, filename = _load_artwork(folder, filename)
+        if not isinstance(expect_revision, str) or expect_revision != revision:
+            raise DrawingError("画作源数据已变化，请重新read_drawing后再修改。")
+        scene = apply_edits(payload["scene"], ops)
+        return _save_artwork(folder, scene, title=title if title is not None else payload.get("title"),
+                             keywords=payload.get("keywords", ""), mood=payload.get("mood", ""), parent=filename)
+
+

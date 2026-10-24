@@ -21,6 +21,8 @@ config/deepseek_key.txt
 config/setting.md
 config/desktop_pet.json
 config/qq_bridge.json
+config/mood.json
+config/memory.json
 memory/*
 !memory/.gitkeep
 plans/*

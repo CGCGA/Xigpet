@@ -34,6 +34,11 @@ from .qq_settings import QQSettingsWindow
 from scripts.screen_capture import ScreenCapturePrompt, screen_request_handler
 from scripts import updater
 from .update_window import UpdateWindow
+from .mood_window import MoodWindow
+from .memory_window import MemoryWindow
+from .pet_mood import MoodError
+from .memory_index import MemoryError as MemoryFailure
+import sqlite3
 from .version import VERSION
 
 IDLE_STATUS = "在这里，陪你聊聊"
@@ -72,6 +77,8 @@ class PetWindow(ConversationMixin, tk.Tk):
         self._attachment_thumbnails = []
         self._tray = None
         self._update_window = None
+        self._mood_window = None
+        self._memory_window = None
         self._update_busy = False
         self._update_cancel = threading.Event()
         self._prepared_update = None
@@ -117,11 +124,18 @@ class PetWindow(ConversationMixin, tk.Tk):
         self.after(1500, self._schedule_tick)
         self.after(2000, self._refresh_identity)
         self.after(1000, self._desktop_tick)
+        self._mood_tick()
 
     def destroy(self) -> None:
         if self._closing:
             return
         self._closing = True
+        pet_core.close_mood_worker()
+        pet_core.close_memory_worker()
+        if self._memory_window is not None and self._memory_window.winfo_exists():
+            self._memory_window.destroy()
+        if self._mood_window is not None and self._mood_window.winfo_exists():
+            self._mood_window.destroy()
         self._update_cancel.set()
         if self._update_window is not None and self._update_window.winfo_exists():
             self._update_window.destroy()
@@ -164,8 +178,10 @@ class PetWindow(ConversationMixin, tk.Tk):
             ), pet_core.KEY_FILE.parent / "desktop_pet.json", self._restore_from_tray, self.destroy,
                 animation_dirs=(pet_core.ROOT / "animation", pet_core.BUNDLED_ROOT / "animation"),
                 on_qq_settings=self._open_qq_settings,
-                on_close_pet=lambda: self._set_desktop_enabled(False), on_check_updates=self._check_updates)
+                on_close_pet=lambda: self._set_desktop_enabled(False), on_check_updates=self._check_updates,
+                on_mood=self._open_mood, on_memory=self._open_memory)
             self._desktop.set_qq_enabled(self._qq_bridge is not None)
+            self._refresh_mood()
         self._background = True
         if self._history_window is not None and self._history_window.winfo_exists():
             self._history_window.withdraw()
@@ -430,6 +446,15 @@ class PetWindow(ConversationMixin, tk.Tk):
                                         cursor="hand2", padx=8, pady=9)
         self.update_button.pack(side="right")
         tk.Frame(self, bg=LINE, height=1).pack(fill="x")
+        mood_strip = tk.Frame(self, bg=WHITE)
+        mood_strip.pack(fill="x")
+        self.mood_text = tk.StringVar(self, value="心情：平静")
+        self.mood_button = tk.Button(mood_strip, textvariable=self.mood_text, command=self._open_mood,
+                                      bg=WHITE, fg=BLUE, relief="flat", bd=0, font=(FONT, 9), cursor="hand2")
+        self.mood_button.pack(side="left", padx=(26, 12), pady=(2, 7))
+        tk.Label(mood_strip, text="点开查看心情与变化", bg=WHITE, fg=MUTED, font=(FONT, 8)).pack(side="left", pady=(2, 7))
+        tk.Button(mood_strip, text="记忆与检索", command=self._open_memory, bg=WHITE, fg=BLUE,
+                  relief="flat", bd=0, font=(FONT, 9), cursor="hand2").pack(side="right", padx=24, pady=(2, 7))
         composer_area = tk.Frame(self, bg=PAGE, padx=24, pady=14)
         composer_area.pack(side="bottom", fill="x")
         self.attachment_frame = tk.Frame(composer_area, bg=PAGE)
@@ -618,6 +643,47 @@ class PetWindow(ConversationMixin, tk.Tk):
                 self._qq_status, self._qq_bridge is not None)
         self._qq_window.deiconify()
         self._qq_window.lift()
+
+    def _refresh_mood(self) -> None:
+        try:
+            snapshot = pet_core.mood_store().snapshot()
+            label = f"心情：{snapshot['label']} {snapshot['mood']:.0f}" if snapshot["config"]["enabled"] else "心情：自动判断已暂停"
+            self.mood_text.set(label)
+            self.mood_button.configure(fg=snapshot["color"])
+            if self._desktop is not None:
+                self._desktop.set_mood(snapshot)
+        except (MoodError, OSError):
+            self.mood_text.set("心情：暂不可用")
+
+    def _mood_tick(self) -> None:
+        if self._closing:
+            return
+        self._refresh_mood()
+        self.after(2000, self._mood_tick)
+
+    def _open_mood(self) -> None:
+        try:
+            store = pet_core.mood_store()
+        except (MoodError, OSError) as exc:
+            messagebox.showerror("心情暂不可用", str(exc), parent=self._desktop if self._background and self._desktop is not None else self)
+            return
+        if self._mood_window is None or not self._mood_window.winfo_exists():
+            parent = self._desktop if self._background and self._desktop is not None else self
+            self._mood_window = MoodWindow(parent, store, self.pet_name)
+        self._mood_window.deiconify()
+        self._mood_window.lift()
+
+    def _open_memory(self) -> None:
+        parent = self._desktop if self._background and self._desktop is not None else self
+        try:
+            memory = pet_core.context_memory()
+        except (MemoryFailure, OSError, sqlite3.Error) as exc:
+            messagebox.showerror("记忆索引暂不可用", str(exc), parent=parent)
+            return
+        if self._memory_window is None or not self._memory_window.winfo_exists():
+            self._memory_window = MemoryWindow(parent, memory)
+        self._memory_window.deiconify()
+        self._memory_window.lift()
 
     def _set_qq_status(self, status) -> None:
         self._qq_status = status
@@ -1002,6 +1068,10 @@ class PetWindow(ConversationMixin, tk.Tk):
                     self._minimize_to_tray()
             elif kind == "tray_qq_settings":
                 self._open_qq_settings()
+            elif kind == "tray_mood":
+                self._open_mood()
+            elif kind == "tray_memory":
+                self._open_memory()
             elif kind == "tray_exit":
                 self.destroy()
                 return

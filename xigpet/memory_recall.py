@@ -129,10 +129,16 @@ class RecallContext:
     relevant: bool
 
     def content(self):
-        return json.dumps({"important.md原文": self.important, "历史原文片段": self.history}, ensure_ascii=False)
+        return json.dumps({"important.md原文": self.important, "检索原文片段": self.history}, ensure_ascii=False)
 
 
-def prepare_recall(important, catalog, query, *, before_line=None, force_history=False):
+def prepare_recall(important, catalog, query, *, before_line=None, force_history=False, index=None):
     excerpt, relevant = important_excerpt(important, query)
+    if index is not None:
+        hits = index.search(query, limit=6, before_line=before_line) if query.strip() else []
+        rows = [{"ref": hit["ref"], "kind": hit["kind"], "line": hit["line"], "role": hit["role"],
+                 "time": hit["time"], "content": hit["excerpt"], "offset": hit["offset"], "block_id": hit["block_id"]}
+                for hit in hits]
+        return RecallContext(excerpt, rows, relevant or any(row["kind"] in ("message", "important") for row in rows))
     rows = history_excerpt(catalog, query, before_line=before_line) if force_history or (recall_requested(query) and not relevant) else []
     return RecallContext(excerpt, rows, relevant or bool(rows))

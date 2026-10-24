@@ -28,6 +28,8 @@ class SystemTray:
             menu=pystray.Menu(
                 pystray.MenuItem("打开聊天", self._restore, default=True),
                 pystray.MenuItem("桌面宠物", self._toggle_pet, checked=lambda _item: self._pet_enabled),
+                pystray.MenuItem("心情状态…", self._mood),
+                pystray.MenuItem("记忆与检索…", self._memory),
                 pystray.MenuItem("QQ 接入设置…", self._qq_settings),
                 pystray.MenuItem("检查更新", self._check_updates),
                 pystray.Menu.SEPARATOR,
@@ -64,6 +66,12 @@ class SystemTray:
 
     def _qq_settings(self, _icon, _item):
         self.events.put(("tray_qq_settings", ""))
+
+    def _mood(self, _icon, _item):
+        self.events.put(("tray_mood", ""))
+
+    def _memory(self, _icon, _item):
+        self.events.put(("tray_memory", ""))
 
     def _check_updates(self, _icon, _item):
         self.events.put(("tray_check_updates", ""))

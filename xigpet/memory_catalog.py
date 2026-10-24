@@ -164,11 +164,13 @@ class MemoryCatalog:
             for entry in wanted:
                 stream.seek(entry["offset"])
                 raw = stream.read(entry["bytes"])
+                if hashlib.sha256(raw).hexdigest() != entry["digest"]:
+                    continue
                 try:
                     item = json.loads(raw)
                 except (ValueError, UnicodeDecodeError):
                     continue
-                result.append({"line": entry["line"], **item})
+                result.append({**item, "line": entry["line"], "ref": f"m{entry['line']}-{entry['digest'][:10]}"})
         return result
 
     @_synchronized

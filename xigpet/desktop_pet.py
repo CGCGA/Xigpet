@@ -7,6 +7,7 @@ import logging
 import os
 import time
 import tkinter as tk
+from functools import lru_cache
 from pathlib import Path
 from tkinter import simpledialog
 
@@ -19,6 +20,7 @@ DEFAULT_SIZE = 180
 MIN_SIZE, MAX_SIZE = 64, 400
 BUBBLE_SECONDS = 10
 QUESTION_SECONDS = 45
+TOPMOST_INTERVAL_MS = 500
 FONT = "Microsoft YaHei UI"
 
 
@@ -33,6 +35,45 @@ def position_window(widget, width, height, x, y):
     gx = f"+{x}" if x >= 0 else f"-{widget.winfo_screenwidth() - width - x}"
     gy = f"+{y}" if y >= 0 else f"-{widget.winfo_screenheight() - height - y}"
     widget.geometry(f"{width}x{height}{gx}{gy}")
+
+
+@lru_cache(maxsize=1)
+def _topmost_api():
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+    user32.GetAncestor.restype = wintypes.HWND
+    user32.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int,
+                                   ctypes.c_int, ctypes.c_int, wintypes.UINT]
+    user32.SetWindowPos.restype = wintypes.BOOL
+    return user32.GetAncestor, user32.SetWindowPos
+
+
+def keep_window_topmost(widget):
+    """Restore a mapped Tk wrapper's Z order without activating its owner."""
+    try:
+        if not widget.winfo_ismapped():
+            return
+        widget.attributes("-topmost", True)
+        if os.name == "nt":
+            import ctypes
+
+            ancestor, position = _topmost_api()
+            # winfo_id() is Tk's client HWND. Windows manages top-level Z order
+            # on its wrapper; GA_ROOT stops before the hidden chat-window owner.
+            hwnd = ancestor(widget.winfo_id(), 2) or widget.winfo_id()
+            # HWND_TOPMOST; SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE |
+            # SWP_NOOWNERZORDER. Do not move/show the hidden main chat window.
+            # https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-setwindowpos
+            if not position(hwnd, -1, 0, 0, 0, 0, 0x0213):
+                raise ctypes.WinError(ctypes.get_last_error())
+        else:
+            widget.lift()
+    except (tk.TclError, OSError):
+        # Mapping/teardown can invalidate a native handle; the next tick retries.
+        logging.debug("Could not restore desktop pet Z order", exc_info=True)
 
 
 def work_area(widget, x: float, y: float, *, full_monitor=False) -> tuple[int, int, int, int]:
@@ -83,27 +124,29 @@ def rounded(canvas, x1, y1, x2, y2, radius=16, **options):
 
 
 class DesktopPet(tk.Toplevel):
-    def __init__(self, master, image_paths, settings_path, on_restore, on_exit, *, animation_dirs=(), on_qq_settings=None, on_close_pet=None, on_check_updates=None):
+    def __init__(self, master, image_paths, settings_path, on_restore, on_exit, *, animation_dirs=(), on_qq_settings=None, on_close_pet=None, on_check_updates=None, on_mood=None, on_memory=None):
         super().__init__(master)
         self.withdraw()
         self.overrideredirect(True)
-        self.attributes("-topmost", True)
         self.configure(bg=TRANSPARENT)
         if os.name == "nt":
             self.attributes("-transparentcolor", TRANSPARENT)
             self.attributes("-toolwindow", True)
+        self.attributes("-topmost", True)
         self.on_restore, self.on_exit = on_restore, on_exit
         self.settings_path = Path(settings_path)
         self._visible = self._dragging = self._hovering = False
         self._size_dialog_open = False
         self._destroyed = False
         self._motion_job = self._bubble_job = None
+        self._topmost_job = None
         self._bubble_until = 0.0
         self._bubble_choice = None
         self.bubble_text = ""
         self._animation_dirs = tuple(Path(path) for path in animation_dirs)
         self._animations = {}
         self._animation_state = None
+        self._mood_score = None
         self._sprite_item = None
         self._cached_work_area = None
         self._work_area_until = 0.0
@@ -141,6 +184,12 @@ class DesktopPet(tk.Toplevel):
         self.menu = tk.Menu(self, tearoff=False)
         self.menu.bind("<Unmap>", lambda _event: self._end_menu())
         self.menu.add_command(label="打开聊天", command=on_restore)
+        self._mood_menu_index = None
+        if on_mood is not None:
+            self.menu.add_command(label="心情状态…", command=on_mood)
+            self._mood_menu_index = self.menu.index("end")
+        if on_memory is not None:
+            self.menu.add_command(label="记忆与检索…", command=on_memory)
         if on_check_updates is not None:
             self.menu.add_command(label="检查更新", command=on_check_updates)
         self._qq_menu_index = None
@@ -161,14 +210,16 @@ class DesktopPet(tk.Toplevel):
         self.bubble = tk.Toplevel(self)
         self.bubble.withdraw()
         self.bubble.overrideredirect(True)
-        self.bubble.attributes("-topmost", True)
         self.bubble.configure(bg=TRANSPARENT)
         if os.name == "nt":
             self.bubble.attributes("-transparentcolor", TRANSPARENT)
             self.bubble.attributes("-toolwindow", True)
+        self.bubble.attributes("-topmost", True)
         self.bubble_canvas = tk.Canvas(self.bubble, width=260, height=105,
                                        bg=TRANSPARENT, highlightthickness=0, cursor="hand2")
         self.bubble_canvas.pack()
+        self.bind("<Map>", self._on_window_map, add="+")
+        self.bubble.bind("<Map>", self._on_window_map, add="+")
 
     @staticmethod
     def _valid_size(value):
@@ -180,6 +231,14 @@ class DesktopPet(tk.Toplevel):
     def set_qq_enabled(self, enabled):
         if self._qq_menu_index is not None:
             self.menu.entryconfigure(self._qq_menu_index, label="QQ 接入设置（已开启）…" if enabled else "QQ 接入模式…")
+
+    def set_mood(self, snapshot):
+        enabled = snapshot["config"]["enabled"]
+        self._mood_score = snapshot["mood"] if enabled else None
+        self.behavior.set_mood(self._mood_score)
+        if self._mood_menu_index is not None:
+            label = f"心情：{snapshot['label']} {snapshot['mood']:.0f}…" if enabled else "心情：自动判断已暂停…"
+            self.menu.entryconfigure(self._mood_menu_index, label=label)
 
     @staticmethod
     def _coordinate(value, default):
@@ -288,6 +347,25 @@ class DesktopPet(tk.Toplevel):
         if self.has_bubble:
             self._position_bubble()
 
+    def _on_window_map(self, event):
+        if event.widget is self or event.widget is self.bubble:
+            self._restore_topmost()
+
+    def _restore_topmost(self):
+        if self._destroyed or not self._visible:
+            return
+        # Restore the pair together, keeping the speech bubble above the pet.
+        keep_window_topmost(self)
+        if self.has_bubble:
+            keep_window_topmost(self.bubble)
+
+    def _topmost_tick(self):
+        self._topmost_job = None
+        if self._destroyed or not self._visible:
+            return
+        self._restore_topmost()
+        self._topmost_job = self.after(TOPMOST_INTERVAL_MS, self._topmost_tick)
+
     def show(self):
         old_position = (self._x, self._y)
         self._clamp_position()
@@ -298,12 +376,17 @@ class DesktopPet(tk.Toplevel):
         self._visible = True
         self._last_frame = time.monotonic()
         self.deiconify()
-        self.lift()
+        self._restore_topmost()
+        if self._topmost_job is None:
+            self._topmost_job = self.after(TOPMOST_INTERVAL_MS, self._topmost_tick)
         if self._motion_job is None:
             self._motion_job = self.after(40, self._float_tick)
 
     def hide(self):
         self._visible = False
+        if self._topmost_job is not None:
+            self.after_cancel(self._topmost_job)
+            self._topmost_job = None
         self._dragging = self._hovering = False
         self._hide_bubble()
         if self._motion_job is not None:
@@ -342,6 +425,7 @@ class DesktopPet(tk.Toplevel):
 
     def _end_menu(self):
         self._resume_motion_at = time.monotonic() + .4
+        self._restore_topmost()
 
     def _set_hover(self, hovering):
         self._hovering = hovering
@@ -370,7 +454,7 @@ class DesktopPet(tk.Toplevel):
         return "break"
 
     def _reset_float(self, delay=0):
-        self.behavior = PetBehavior()
+        self.behavior = PetBehavior(mood_score=self._mood_score)
         self._resume_motion_at = time.monotonic() + delay
         if self._sprite_item is not None:
             self._switch_animation("relax")
@@ -439,7 +523,7 @@ class DesktopPet(tk.Toplevel):
         self._bubble_until = time.monotonic() + BUBBLE_SECONDS
         self._position_bubble()
         self.bubble.deiconify()
-        self.bubble.lift()
+        self._restore_topmost()
         if self._bubble_job is not None:
             self.after_cancel(self._bubble_job)
         self._bubble_job = self.after(BUBBLE_SECONDS * 1000, self._hide_bubble)
@@ -452,7 +536,7 @@ class DesktopPet(tk.Toplevel):
         self._bubble_until = time.monotonic() + QUESTION_SECONDS
         self._position_bubble()
         self.bubble.deiconify()
-        self.bubble.lift()
+        self._restore_topmost()
         self._bubble_job = self.after(QUESTION_SECONDS * 1000, self._hide_bubble)
 
     def _answer_bubble(self, accepted):
@@ -509,9 +593,11 @@ class DesktopPet(tk.Toplevel):
         if self._destroyed:
             return
         self._destroyed = True
-        for job in (self._motion_job, self._bubble_job):
+        self._visible = False
+        for job in (self._motion_job, self._bubble_job, self._topmost_job):
             if job is not None:
                 self.after_cancel(job)
+        self._motion_job = self._bubble_job = self._topmost_job = None
         super().destroy()
         self._animations.clear()
         self._frames = []

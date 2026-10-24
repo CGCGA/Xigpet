@@ -14,8 +14,9 @@ FLOAT_SPEED = 14
 
 
 class PetBehavior:
-    def __init__(self, rng=None):
+    def __init__(self, rng=None, *, mood_score=None):
         self.rng = random if rng is None else rng
+        self.set_mood(mood_score)
         self.state = "relax"
         self.x = self.y = self.clock = 0.0
         self.next_float = FLOAT_INTERVAL
@@ -24,6 +25,13 @@ class PetBehavior:
         self.steps_remaining = 0
         self.target = (0.0, 0.0)
         self.bounds = (-FLOAT_RADIUS_X, -FLOAT_RADIUS_Y, FLOAT_RADIUS_X, FLOAT_RADIUS_Y)
+
+    def set_mood(self, score):
+        self.mood_score = max(0, min(100, float(score))) if score is not None else None
+
+    def _activity_chance(self):
+        # Baseline 70 preserves the original 50% roll; changes stay subtle.
+        return .5 if self.mood_score is None else max(.2, min(.65, .15 + self.mood_score * .005))
 
     def _relax(self):
         self.state = "relax"
@@ -78,13 +86,13 @@ class PetBehavior:
         # Only roll once per deadline, rather than once per rendering frame.
         if self.clock >= self.next_play:
             self.next_play = self.clock + PLAY_INTERVAL
-            if self.rng.random() < .5:
+            if self.rng.random() < self._activity_chance():
                 self.state = "play"
                 self.play_until = self.clock + PLAY_DURATION
                 return
         if self.clock >= self.next_float:
             self.next_float = self.clock + FLOAT_INTERVAL
-            if allow_float and self.rng.random() < .5:
+            if allow_float and self.rng.random() < self._activity_chance():
                 self.state = "float"
                 self.steps_remaining = self.rng.randint(1, 4)
                 self._pick_target()
