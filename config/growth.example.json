@@ -1,0 +1,6 @@
+{
+  "enabled": true,
+  "locked_fields": [],
+  "cooldown_hours": 6,
+  "daily_limit": 3
+}

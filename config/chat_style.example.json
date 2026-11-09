@@ -1,0 +1,7 @@
+{
+  "enabled": true,
+  "humor_enabled": true,
+  "jokes_per_turn": 2,
+  "use_builtin_jokes": true,
+  "jokes": []
+}

@@ -12,10 +12,12 @@ from pathlib import Path
 
 
 ROW = re.compile(r"^- \[([ xX~-])\] ([0-2]\d:[0-5]\d) \| (.+)$")
-PLAN_POLICY = "morning-afternoon-evening-2-v1"
+PLAN_POLICY = "morning-afternoon-evening-2-drawing-3-v2"
 GENERATED_MARKER = f"<!-- daily-planner: {PLAN_POLICY} -->"
 CONTACT_PERIODS = (("上午", 8, 12), ("下午", 12, 18), ("晚上", 18, 23))
 MIN_CONTACT_GAP = timedelta(minutes=30)
+MAX_DRAWINGS = 3
+DRAWING_PREFIX = "[自主画画] "
 _LOCKS = {}
 _LOCKS_GUARD = threading.Lock()
 
@@ -54,6 +56,19 @@ def contact_slots(now):
         else:
             moments = (left + span / 2,)
         slots.extend({"period": name, "time": moment.strftime("%H:%M")} for moment in moments)
+    return slots
+
+
+def drawing_slots(now):
+    """One optional creative slot per remaining daytime period."""
+    earliest = _ceil_minute(now + timedelta(minutes=2))
+    slots = []
+    for period, start, end in CONTACT_PERIODS:
+        left = max(earliest, now.replace(hour=start, minute=0, second=0, microsecond=0))
+        right = now.replace(hour=end, minute=0, second=0, microsecond=0) - timedelta(minutes=1)
+        if left <= right:
+            slots.append({"kind": "drawing", "period": period,
+                          "time": (left + (right - left) / 2).strftime("%H:%M")})
     return slots
 
 
@@ -138,25 +153,43 @@ class DailyPlan:
         for line in path.read_text(encoding="utf-8").splitlines():
             match = ROW.fullmatch(line)
             if match and match[2][:2] < "24":
-                rows.append({"status": match[1], "time": match[2], "topic": match[3]})
+                topic = match[3]
+                row = {"status": match[1], "time": match[2], "topic": topic}
+                if topic.startswith(DRAWING_PREFIX):
+                    row.update(kind="drawing", topic=topic[len(DRAWING_PREFIX):])
+                rows.append(row)
         return rows
 
-    def _write(self, day: str, rows: list[dict], *, generated=None, automatic=None, last_contact=None) -> Path:
+    def _drawing_attempts(self, day):
+        if not self.has_day(day):
+            return 0
+        text = self.current_path.read_text(encoding="utf-8")
+        match = re.search(r"<!-- drawing-attempts: (\d+) -->", text)
+        recorded = int(match[1]) if match else 0
+        started = sum(row.get("kind") == "drawing" and row["status"] in ("x", "-")
+                      for row in self.read(day))
+        return max(recorded, started)
+
+    def _write(self, day: str, rows: list[dict], *, generated=None, automatic=None, last_contact=None, drawing_attempts=None) -> Path:
         path = self.path(day)
         previous_automatic, previous_contact = self._metadata(day)
         automatic = previous_automatic if automatic is None else automatic
         generated = self.has_generated(day) if generated is None else generated
         last_contact = previous_contact if last_contact is None else last_contact
-        body = [f"# {day} 主动聊天计划", "", "时间为电脑本地时间；[ ] 待发送，[x] 已发送，[~] 已过期。", ""]
+        drawing_attempts = self._drawing_attempts(day) if drawing_attempts is None else drawing_attempts
+        body = [f"# {day} 主动聊天计划", "", "时间为电脑本地时间；[ ] 待执行，[x] 已完成，[~] 已过期，[-] 绘画已开始（失败或重启后不自动重试）。", ""]
         if generated:
-            body.extend([GENERATED_MARKER, "上午 08:00–12:00、下午 12:00–18:00、晚上 18:00–23:00，目标每段 2 次；较晚启动只安排剩余时间。"])
+            body.extend([GENERATED_MARKER, "上午 08:00–12:00、下午 12:00–18:00、晚上 18:00–23:00，主动联系目标每段 2 次；另可安排最多 3 次自主画画，题材由宠物决定。较晚启动只安排剩余时间。"])
+        body.append(f"<!-- drawing-attempts: {drawing_attempts} -->")
         automatic = automatic.intersection(row["time"] for row in rows)
         if automatic:
             body.append("<!-- automatic-times: " + ",".join(sorted(automatic)) + " -->")
         if last_contact is not None:
             body.append(f"<!-- last-automatic-contact: {last_contact.isoformat(timespec='seconds')} -->")
         body.append("")
-        body.extend(f"- [{row['status']}] {row['time']} | {row['topic']}" for row in sorted(rows, key=lambda row: row["time"]))
+        body.extend(f"- [{row['status']}] {row['time']} | "
+                    + (DRAWING_PREFIX if row.get("kind") == "drawing" else "") + row["topic"]
+                    for row in sorted(rows, key=lambda row: row["time"]))
         if not rows:
             body.append("今天暂无主动聊天安排。")
         _replace(path, "\n".join(body) + "\n")
@@ -208,14 +241,16 @@ class DailyPlan:
         automatic, _ = self._metadata(day)
         slots = contact_slots(now)
         model_events = []
-        for event in events[:8]:
+        for event in events[:11]:
             if not isinstance(event, dict):
                 continue
             try:
                 time, topic = self._validate(event.get("time"), event.get("topic"), now)
             except ValueError:
                 continue
-            model_events.append({"time": time, "topic": topic})
+            if event.get("kind", "chat") not in ("chat", "drawing"):
+                continue
+            model_events.append({"time": time, "topic": topic, "kind": event.get("kind", "chat")})
         fallback_topics = {
             "上午": ("结合人设和近期话题自然问候，聊聊今天想做的事情。", "关心上午过得如何，分享一件符合自己性格的小事。"),
             "下午": ("自然关心午后状态，结合记忆开启一个轻松话题。", "聊聊下午的见闻或趣事，关心用户是否需要稍作休息。"),
@@ -225,8 +260,10 @@ class DailyPlan:
             future_slots = [slot for slot in slots if slot["period"] == period]
             if not future_slots:
                 continue
-            existing = sum(contact_period(row["time"]) == period and row["status"] not in ("~", "-") for row in rows)
-            needed = min(2 - existing, len(future_slots), 8 - len(rows))
+            existing = sum(row.get("kind") != "drawing" and contact_period(row["time"]) == period
+                           and row["status"] not in ("~", "-") for row in rows)
+            chat_count = sum(row.get("kind") != "drawing" for row in rows)
+            needed = min(2 - existing, len(future_slots), 8 - chat_count)
             if needed <= 0:
                 continue
             # Reserve distinct times, at least 30 minutes apart, including adjacent periods.
@@ -234,7 +271,8 @@ class DailyPlan:
                 moment = now.replace(hour=int(time[:2]), minute=int(time[3:]), second=0, microsecond=0)
                 return all(abs(moment - now.replace(hour=int(row["time"][:2]), minute=int(row["time"][3:]), second=0, microsecond=0)) >= MIN_CONTACT_GAP
                            for row in rows if row["status"] not in ("~", "-"))
-            candidates = [event for event in model_events if contact_period(event["time"]) == period]
+            candidates = [event for event in model_events if event["kind"] == "chat"
+                          and contact_period(event["time"]) == period]
             candidates += [{"time": slot["time"], "topic": fallback_topics[period][i % 2]}
                            for i, slot in enumerate(future_slots)]
             # A model-selected time can collide with a preferred fallback: use other free minutes.
@@ -255,6 +293,20 @@ class DailyPlan:
                     rows.append({"status": " ", **candidate})
                     automatic.add(candidate["time"])
                     needed -= 1
+        # Drawing is optional: use only the model's creative decisions, up to three.
+        # Retain old rows and spent attempts when upgrading today's existing plan.
+        drawing_count = max(self._drawing_attempts(day), sum(row.get("kind") == "drawing" for row in rows))
+        for event in model_events:
+            if event["kind"] != "drawing" or drawing_count >= MAX_DRAWINGS:
+                continue
+            if contact_period(event["time"]) is None:
+                continue
+            moment = now.replace(hour=int(event["time"][:2]), minute=int(event["time"][3:]), second=0, microsecond=0)
+            if any(abs(moment - now.replace(hour=int(row["time"][:2]), minute=int(row["time"][3:]), second=0, microsecond=0)) < MIN_CONTACT_GAP
+                   for row in rows if row["status"] not in ("~", "-")):
+                continue
+            rows.append({"status": " ", **event})
+            drawing_count += 1
         return self._write(day, rows, generated=True, automatic=automatic)
 
     @_locked
@@ -262,7 +314,7 @@ class DailyPlan:
         time, topic = self._validate(time, topic, now)
         day = now.date().isoformat()
         rows = self.read(day)
-        if len(rows) >= 8:
+        if sum(row.get("kind") != "drawing" for row in rows) >= 8:
             raise ValueError("当天最多安排 8 次主动聊天")
         if any(row["time"] == time for row in rows):
             raise ValueError("这个时间已有计划")
@@ -273,7 +325,8 @@ class DailyPlan:
     def remove(self, now: datetime, time: str) -> bool:
         day = now.date().isoformat()
         rows = self.read(day)
-        remaining = [row for row in rows if row["time"] != time or row["status"] == "x"]
+        remaining = [row for row in rows if row["time"] != time or row["status"] == "x"
+                     or (row.get("kind") == "drawing" and row["status"] == "-")]
         if len(remaining) == len(rows):
             return False
         self._write(day, remaining)
@@ -292,7 +345,13 @@ class DailyPlan:
                 continue
             scheduled = now.replace(hour=int(row["time"][:2]), minute=int(row["time"][3:]), second=0, microsecond=0)
             delay = now - scheduled
-            if row["time"] in automatic:
+            if row.get("kind") == "drawing":
+                if delay > timedelta(minutes=15) or (delay >= timedelta(0) and self._drawing_attempts(day) >= MAX_DRAWINGS):
+                    row["status"] = "~"
+                    changed = True
+                elif delay >= timedelta(0):
+                    manual_due.append(row)
+            elif row["time"] in automatic:
                 if delay >= timedelta(0):
                     if contact_period(row["time"]) != contact_period(now):
                         row["status"] = "~"
@@ -324,10 +383,26 @@ class DailyPlan:
         return None
 
     @_locked
+    def start_drawing(self, day: str, time: str, topic: str) -> bool:
+        """Reserve a daily attempt on disk before calling any model or drawing tool."""
+        attempts = self._drawing_attempts(day)
+        if attempts >= MAX_DRAWINGS:
+            return False
+        rows = self.read(day)
+        for row in rows:
+            if (row.get("kind") == "drawing" and row["status"] == " "
+                    and row["time"] == time and row["topic"] == topic):
+                row["status"] = "-"
+                self._write(day, rows, drawing_attempts=attempts + 1)
+                return True
+        return False
+
+    @_locked
     def mark_sent(self, day: str, time: str, topic: str, *, sent_at: datetime | None = None) -> bool:
         rows = self.read(day)
         for row in rows:
-            if row["time"] == time and row["topic"] == topic and row["status"] == " ":
+            if (row["time"] == time and row["topic"] == topic
+                    and (row["status"] == " " or (row.get("kind") == "drawing" and row["status"] == "-"))):
                 row["status"] = "x"
                 automatic, _ = self._metadata(day)
                 last = sent_at if time in automatic else None

@@ -8,7 +8,7 @@ from .chat_view import PAGE, WHITE, INK, MUTED, BLUE, LINE, FONT
 from .pet_mood import EMOTIONS, MoodError
 
 
-MODES = {"带上这轮的感受": "event", "只带心情": "label", "不影响对话": "off"}
+MODES = {"持续心情＋变化原因": "event", "只带当前心情": "label", "不影响对话": "off"}
 SOURCES = {"user": "聊天", "proactive": "主动联系", "drawing": "自主绘画", "decay": "自然回稳"}
 
 
@@ -71,20 +71,21 @@ class MoodWindow(tk.Toplevel):
         self.variables = {}
         fields = [("baseline", "平时心情", 30, 100), ("floor", "心情下限", 0, 100),
                   ("half_life_hours", "回稳半衰期/小时", 1, 168), ("confidence", "可信度门槛", 0, 100),
-                  ("daily_limit", "每天最多带入/次", 0, 50)]
+                  ("daily_limit", "每天带入原因/次", 0, 50), ("sensitivity", "反应强度/%", 30, 300)]
         for i, (key, label, low, high) in enumerate(fields):
             row, col = 2 + i // 2, (i % 2) * 2
             tk.Label(controls, text=label, bg=PAGE, fg=INK, font=(FONT, 9)).grid(row=row, column=col, sticky="w", pady=4)
             variable = self.variables[key] = tk.StringVar(self, value=str(config[key]))
             tk.Spinbox(controls, textvariable=variable, from_=low, to=high, width=6, bg=WHITE, fg=INK,
                        relief="flat", font=(FONT, 10)).grid(row=row, column=col + 1, sticky="w", padx=(8, 20))
-        tk.Label(controls, text="用户称呼", bg=PAGE, fg=INK, font=(FONT, 9)).grid(row=4, column=2, sticky="w")
+        tk.Label(controls, text="用户称呼", bg=PAGE, fg=INK, font=(FONT, 9)).grid(row=5, column=0, sticky="w")
         self.owner_name = tk.StringVar(self, value=config["owner_name"])
         tk.Entry(controls, textvariable=self.owner_name, width=10, bg=WHITE, fg=INK, relief="flat",
-                 font=(FONT, 10)).grid(row=4, column=3, sticky="w", padx=(8, 0))
+                 font=(FONT, 10)).grid(row=5, column=1, sticky="w", padx=(8, 0))
         controls.columnconfigure(2, weight=1)
         tk.Label(settings, text="心情总分会慢慢回到平时的状态；七种情绪的半衰期为90分钟。\n\n"
-                 "低于可信度门槛的变化只保留记录，不带入对话。关闭自动判断后，不再发起额外的判断请求，也不再影响语气和动作活跃程度。\n\n"
+                 "默认反应强度150%，越高波动越明显。当前心情持续影响后续回复；每日次数只限制变化原因的带入，不限制当前心情。\n\n"
+                 "低于可信度门槛的变化不带入对话。关闭自动判断后，不再发起判断请求，也不再影响语气和动作活跃程度。\n\n"
                  "心情只是表达的参考，不改变原有人设，也不会因为你暂时没来聊天而扣分。",
                  bg=PAGE, fg=MUTED, font=(FONT, 9), wraplength=570, justify="left").pack(anchor="w", padx=20, pady=12)
         tk.Label(overview, text="最近的心情变化", bg=PAGE, fg=INK, font=(FONT, 10, "bold")).pack(anchor="w", padx=12)

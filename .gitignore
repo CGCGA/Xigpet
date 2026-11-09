@@ -23,6 +23,10 @@ config/desktop_pet.json
 config/qq_bridge.json
 config/mood.json
 config/memory.json
+config/chat_style.json
+config/growth.json
+config/web.json
+config/bangumi.json
 memory/*
 !memory/.gitkeep
 plans/*

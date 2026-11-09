@@ -31,6 +31,7 @@ from .chat_history import HistoryArchive, LIVE_MESSAGE_LIMIT
 from .history_window import HistoryWindow
 from .qq_bridge import QQBridge, QQSettings
 from .qq_settings import QQSettingsWindow
+from .growth_window import GrowthWindow
 from scripts.screen_capture import ScreenCapturePrompt, screen_request_handler
 from scripts import updater
 from .update_window import UpdateWindow
@@ -46,7 +47,6 @@ MIN_REPLY_GAP = 1.0
 MAX_REPLY_GAP = 3.0
 IDLE_MIN_SECONDS, IDLE_MAX_SECONDS = 5 * 60, 30 * 60
 SCREEN_REQUEST_TEXT = "我可以看看你的屏幕吗？"
-IDLE_DRAW_TEXT = "我画了一幅画"
 IDLE_REMINDER_TEXTS = (
     "你是不是把我忘了？(¬‿¬)",
     "悄悄冒个头，我还在这里哦。",
@@ -57,7 +57,6 @@ IDLE_REMINDER_TEXTS = (
     "忙了这么久，要不要稍微休息一下？",
     "伸个懒腰，等你回来聊天。",
     SCREEN_REQUEST_TEXT,
-    IDLE_DRAW_TEXT,
 )
 
 
@@ -108,6 +107,7 @@ class PetWindow(ConversationMixin, tk.Tk):
         self._init_conversation()
         self.history_archive = HistoryArchive(pet_core.memory_catalog())
         self._history_window = None
+        self._growth_window = None
         self._qq_bridge = self._qq_turn_bridge = None
         self._qq_window = None
         self._qq_status = "QQ 模式未启用"
@@ -136,6 +136,8 @@ class PetWindow(ConversationMixin, tk.Tk):
             self._memory_window.destroy()
         if self._mood_window is not None and self._mood_window.winfo_exists():
             self._mood_window.destroy()
+        if self._growth_window is not None and self._growth_window.winfo_exists():
+            self._growth_window.destroy()
         self._update_cancel.set()
         if self._update_window is not None and self._update_window.winfo_exists():
             self._update_window.destroy()
@@ -287,25 +289,24 @@ class PetWindow(ConversationMixin, tk.Tk):
                 self._screen_request_until = time.monotonic() + QUESTION_SECONDS
                 self._desktop.show_question(SCREEN_REQUEST_TEXT,
                     lambda accepted: self._on_screen_answer(token, accepted))
-            elif self._last_idle_reminder == IDLE_DRAW_TEXT:
-                if pet_core.has_key():
-                    self._desktop.show_bubble("我想画一幅画送给你，等我一下。", preview=False)
-                    self._begin_turn()
-                    self.status.set("正在画画…")
-                    threading.Thread(target=self._idle_drawing_worker, daemon=True).start()
-                else:
-                    self._desktop.show_bubble("想画点东西给你看，先帮我设置一下 Key 吧。", preview=False)
             else:
                 self._desktop.show_bubble(self._last_idle_reminder, preview=False)
             self._schedule_next_idle()
         self.after(1000, self._desktop_tick)
 
-    def _idle_drawing_worker(self) -> None:
+    def _planned_drawing_worker(self, day: str, event: dict) -> None:
         try:
-            result = pet_core.create_idle_drawing()
-            self.events.put(("idle_drawing_done", result))
+            plan = pet_core.daily_plan()
+            if not plan.start_drawing(day, event["time"], event["topic"]):
+                self.events.put(("turn_done", ""))
+                return
+            pet_core.create_planned_drawing(event["topic"],
+                on_reply=lambda answer: self.events.put(("drawing_reply", answer)))
+            plan.mark_sent(day, event["time"], event["topic"])
+            self.events.put(("turn_done", ""))
         except Exception as exc:
-            self.events.put(("idle_drawing_error", str(exc)))
+            # A spent attempt stays recorded, including after failure or restart.
+            self.events.put(("planned_drawing_error", str(exc)))
 
     def _schedule_next_idle(self) -> None:
         self._next_idle_at = time.monotonic() + random.uniform(IDLE_MIN_SECONDS, IDLE_MAX_SECONDS)
@@ -455,6 +456,8 @@ class PetWindow(ConversationMixin, tk.Tk):
         tk.Label(mood_strip, text="点开查看心情与变化", bg=WHITE, fg=MUTED, font=(FONT, 8)).pack(side="left", pady=(2, 7))
         tk.Button(mood_strip, text="记忆与检索", command=self._open_memory, bg=WHITE, fg=BLUE,
                   relief="flat", bd=0, font=(FONT, 9), cursor="hand2").pack(side="right", padx=24, pady=(2, 7))
+        tk.Button(mood_strip, text="自我成长", command=self._open_growth, bg=WHITE, fg=BLUE,
+                  relief="flat", bd=0, font=(FONT, 9), cursor="hand2").pack(side="right", padx=8, pady=(2, 7))
         composer_area = tk.Frame(self, bg=PAGE, padx=24, pady=14)
         composer_area.pack(side="bottom", fill="x")
         self.attachment_frame = tk.Frame(composer_area, bg=PAGE)
@@ -673,6 +676,17 @@ class PetWindow(ConversationMixin, tk.Tk):
         self._mood_window.deiconify()
         self._mood_window.lift()
 
+    def _open_growth(self) -> None:
+        parent = self._desktop if self._background and self._desktop is not None else self
+        try:
+            pet_core.growth_store().snapshot()
+            if self._growth_window is None or not self._growth_window.winfo_exists():
+                self._growth_window = GrowthWindow(parent, pet_core.growth_store())
+            self._growth_window.deiconify()
+            self._growth_window.lift()
+        except (pet_core.GrowthError, MoodError, OSError) as exc:
+            messagebox.showerror("成长设定暂不可用", str(exc), parent=parent)
+
     def _open_memory(self) -> None:
         parent = self._desktop if self._background and self._desktop is not None else self
         try:
@@ -883,8 +897,14 @@ class PetWindow(ConversationMixin, tk.Tk):
         if self._prepared_update is None and has_today and not self.busy and not self.planning and not self._capturing_screen and not self._screen_tool_reason and time.monotonic() >= self.next_due_attempt:
             event = plan.due(now)
             if event:
+                if event.get("kind") == "drawing" and not pet_core.has_key():
+                    self.after(15000, self._schedule_tick)
+                    return
                 self._begin_turn()
-                threading.Thread(target=self._proactive_worker, args=(now.date().isoformat(), event), daemon=True).start()
+                worker = self._planned_drawing_worker if event.get("kind") == "drawing" else self._proactive_worker
+                if event.get("kind") == "drawing":
+                    self.status.set("正在自主画画…")
+                threading.Thread(target=worker, args=(now.date().isoformat(), event), daemon=True).start()
         self.after(15000, self._schedule_tick)
 
     def _plan_worker(self) -> None:
@@ -992,7 +1012,7 @@ class PetWindow(ConversationMixin, tk.Tk):
             return
         kind, content = self._pending_replies.popleft()
         self._add_message("error" if kind in {"error", "proactive_error"} else "assistant", content)
-        if (kind in {"reply", "proactive_reply"} and self._qq_bridge is not None
+        if (kind in {"reply", "proactive_reply", "drawing_reply"} and self._qq_bridge is not None
                 and self._qq_bridge is self._qq_turn_bridge):
             self._qq_bridge.send(content)
         if self._background and kind in {"reply", "proactive_reply"}:
@@ -1045,15 +1065,11 @@ class PetWindow(ConversationMixin, tk.Tk):
                     self._desktop.show_bubble("这次截图失败了，请回聊天窗口查看。", preview=False)
                 self._add_message("error", f"屏幕截图失败：{value}")
                 self._finish_turn()
-            elif kind in {"idle_drawing_done", "idle_drawing_error"}:
-                if self._desktop_enabled and self._background and self._desktop is not None:
-                    if kind == "idle_drawing_done":
-                        caption, _pictures = split_media(value)
-                        self._desktop.show_bubble(naturalize_text(caption).strip() or "我画了一幅画。")
-                    else:
-                        self._desktop.show_bubble("这次没画好，晚点再画给你看。", preview=False)
+            elif kind == "planned_drawing_error":
+                logging.warning("Planned drawing failed: %s", value)
                 self._worker_done = True
-                self._finish_turn()
+                if not self._pending_replies and self._delivery_job is None:
+                    self._finish_turn()
             elif kind == "tray_ready":
                 if self._tray_start_job is not None:
                     self.after_cancel(self._tray_start_job)
@@ -1082,7 +1098,7 @@ class PetWindow(ConversationMixin, tk.Tk):
             elif kind == "plan_error":
                 self.planning = False
                 self.next_plan_attempt = time.monotonic() + 300
-            elif kind in {"reply", "proactive_reply"}:
+            elif kind in {"reply", "proactive_reply", "drawing_reply"}:
                 self._pending_replies.append((kind, value))
                 self._schedule_delivery()
             elif kind == "turn_done":

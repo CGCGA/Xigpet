@@ -8,6 +8,11 @@ import json
 import shutil
 from pathlib import Path
 
+from xigpet.chat_style import DEFAULT_CONFIG as CHAT_STYLE_DEFAULTS
+from xigpet.self_growth import DEFAULT_CONFIG as GROWTH_DEFAULTS
+from scripts.deepseek_web import DEFAULT_CONFIG as WEB_DEFAULTS
+from scripts.bangumi_tools import DEFAULT_CONFIG as BANGUMI_DEFAULTS
+
 
 ROOT = Path(__file__).resolve().parents[1]
 TOP_FILES = ("main.py", "requirements.txt", ".editorconfig", "Xig.png", "VERSION.json",
@@ -54,6 +59,10 @@ config/desktop_pet.json
 config/qq_bridge.json
 config/mood.json
 config/memory.json
+config/chat_style.json
+config/growth.json
+config/web.json
+config/bangumi.json
 memory/*
 !memory/.gitkeep
 plans/*
@@ -86,14 +95,20 @@ python main.py
 
 - 浅蓝聊天界面、图片发送与理解、平滑滚动，主页最多显示 50 条，完整历史按日期查询。
 - 人设 Markdown、重要记忆、完整聊天和带原文位置的记忆目录；模型按需要检索旧事。
+- Bangumi公开动漫资料：搜索作品、角色、声优/制作人物，查询简介、日期、集数、评分和前后作、staff与对应版本的配音关联。默认开启，无需额外Key；每轮最多6次请求、缓存5分钟，附来源链接，详见宠物定制指南。
+- 自我成长：宠物可在兴趣、表达习惯、小目标、自我描述四项内维护自己的补充设定；聊天页可锁定、编辑、关闭自主修改及恢复历史版本。默认间隔6小时、每天最多3次，主人设始终优先。
+- DeepSeek官方Search与Fetch复用当前Key，按需先搜索再读网页正文，保留来源与日期。每轮默认最多4次网络请求，重复请求及同篇正文翻页复用缓存；官方工具另按成功请求计费，可在config/web.json关闭或调整预算，详见宠物定制指南。
+- 自然聊天风格：按人设接话，减少客服套话、重复开场和例行追问；少量可选口语素材避免近期重复，主动联系接续真实话题。默认开启，不增加模型调用次数；可复制 `config/chat_style.example.json` 为 `config/chat_style.json` 调整或关闭，详见宠物定制指南。
 - 全文记忆检索覆盖完整原文，支持中英文常用同义词、轻微拼写错误和角色/日期筛选。旧对话可在后台整理为带来源的摘要，按引用还原原文；输入上下文有估算预算，完整工具组可折叠读回，原始聊天不会改写。通过聊天页、桌宠右键或托盘的“记忆与检索”查看。后台摘要达到门槛才额外调用当前模型，可在设置中关闭；本地检索不调用模型。私有数据位于 `config/memory.json` 和 `memory/context.sqlite3`，不进入分享与更新文件。
 - 最小化进入置顶桌宠，支持拖动、大小设置、放松/漂浮/玩耍动画和托盘驻留。可以单独关闭桌宠，保留后台聊天与 QQ 功能。
-- 每日生成共用主动联系计划，按可行时段上午、下午、晚上各两次；软件运行时执行。
+- 每日生成共用主动联系计划，按可行时段上午、下午、晚上各两次；另可自主安排每天最多 3 次画画，题材由宠物结合性格、记忆和兴趣决定。软件运行时执行，作品保存到聊天记录与画作库，不弹绘画提示气泡。
 - 时间、百科/萌娘百科、新闻、媒体检索、受限 Python/Pillow 绘画、笔记和截图请求工具。
 - 绘画支持贝塞尔曲线、透明图层、渐变和 2 倍抗锯齿，作品保存到 `media/drawings/`，记录名称与标签，之后可检索并再次发送。
 - 新作品同时保存 `.drawing.json` 图形源文件，可通过 `read_drawing` / `edit_drawing` 修改局部、颜色和图层；修改生成新版本并保留原作。旧 PNG 仍可发送，没有源文件的旧作无法直接局部编辑。备份作品时请保留 PNG 与同名源文件。
-- 心情系统包含总心情、七种情绪、自然回稳和最近60条变化记录，可从聊天页、桌宠右键和托盘打开。默认每轮结束后额外调用一次当前模型判断，使用你的 API 额度；在后台执行，不阻塞回复，可在心情设置中关闭。设置和状态分别保存在私有的 `config/mood.json`、`memory/mood.json`，不会进入分享或更新文件。
+- 心情系统包含总心情、七种情绪、自然回稳和最近60条变化记录，可从聊天页、桌宠右键和托盘打开。反应强度默认150%，可在设置中调整；当前情绪持续影响后续对话的措辞、语气和接话积极程度，每日带入次数只限制变化原因，不限制当前心情。默认每轮结束后额外调用一次当前模型判断，使用你的 API 额度；在后台执行，不阻塞回复，可在心情设置中关闭。设置和状态分别保存在私有的 `config/mood.json`、`memory/mood.json`，不会进入分享或更新文件。
 - 闲置提醒仅显示桌宠气泡，不加入聊天或转发 QQ；查看屏幕需本次明确确认。截图工具也必须在本机确认，成功后图片才进入聊天和模型输入。
+
+自主绘画作为 `plans/plan.md` 中带 `[自主画画]` 标记的独立项目，计划器每天选择安排 0～3 次，不再由随机闲置气泡触发。每项仅创作一幅；开始前持久化计数，失败或重启不自动重试，过期项目不集中补画。普通主动联系不临时调用绘画工具；你在正常聊天中主动要求画画仍可使用原有绘画功能。计划创作需要 API Key，使用当前模型额度；启用 QQ 接入时，自主画作和说明会同步发送到当前 QQ 联系人。升级旧计划时保留已有提醒和已发送记录。
 - 可选 SnowLuma OneBot v11 QQ 私聊文字/图片双向同步。SnowLuma 不包含在本项目中，需自行安装、启动并登录宠物 QQ。右键桌宠或托盘打开 QQ 设置，读取自己的 `onebot_账号.json`，填写用户 QQ，保存并启用。默认本机地址 `ws://127.0.0.1:3001/`，需要开启正向 WebSocket；Token 使用当前服务配置，不是 DeepSeek Key。
 
 ## 目录
@@ -188,6 +203,10 @@ def prepare_share(root: Path, output: Path):
         "README.md": README, ".gitignore": GITIGNORE,
         ".gitattributes": "*.bat -text whitespace=cr-at-eol\n",
         "config/setting.example.md": SETTING_EXAMPLE,
+        "config/chat_style.example.json": json.dumps(CHAT_STYLE_DEFAULTS, ensure_ascii=False, indent=2) + "\n",
+        "config/growth.example.json": json.dumps(GROWTH_DEFAULTS, ensure_ascii=False, indent=2) + "\n",
+        "config/web.example.json": json.dumps(WEB_DEFAULTS, ensure_ascii=False, indent=2) + "\n",
+        "config/bangumi.example.json": json.dumps(BANGUMI_DEFAULTS, ensure_ascii=False, indent=2) + "\n",
         "config/setting.md": SETTING_EXAMPLE,
         "config/deepseek_key.example.txt": "在这里填写你自己的 DeepSeek API Key，只填一行。\n",
         "config/deepseek_key.txt": "",
