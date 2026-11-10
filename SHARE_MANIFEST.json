@@ -204,8 +204,8 @@
     "sha256": "811da3eb22bcdcb82dea657b4fe59e9aca831d2d0cbd2aff26ccb6cf2436047d"
   },
   "VERSION.json": {
-    "bytes": 22,
-    "sha256": "89e378044e74d31461eaa5c8c2e12f83b67104152eec716085937302c5bf56d0"
+    "bytes": 21,
+    "sha256": "632a818d32a9bf4ea20983ba8b9cc159536672030602febc690e3bdc037907bb"
   },
   "Xig.png": {
     "bytes": 2072878,
@@ -228,12 +228,12 @@
     "sha256": "69641a5cf609c2e5eec9c06337d95b98d15d87d63e45c205bb1af35517529076"
   },
   "xigpet/chat_style.py": {
-    "bytes": 5903,
-    "sha256": "4f3034a3e2f347e2d6b864e6837ebc3f1e4e697296518d0560075592279d2a05"
+    "bytes": 5963,
+    "sha256": "6b032d1966678aacf54bca0f3856659ec4fe2fa4dc6db75a409984bc12a93c34"
   },
   "xigpet/chat_text.py": {
-    "bytes": 2702,
-    "sha256": "385457afd38018937148aadc5179aab219875bb943830896f52c0edd4f7f1ff5"
+    "bytes": 4641,
+    "sha256": "1f444832891f374912634a5122163585193dacecbc4afe32bcebded60fe93032"
   },
   "xigpet/chat_view.py": {
     "bytes": 19887,
@@ -288,8 +288,8 @@
     "sha256": "9d1ee3b9821227f5e78f87a0e3d03a930b95830a96a65c2804546249b4f3a0e2"
   },
   "xigpet/pet_core.py": {
-    "bytes": 78036,
-    "sha256": "7a9976746d9fa9b3bbdf95c2b18ff41db9873937f255d4c78e3df37d95b8e116"
+    "bytes": 78331,
+    "sha256": "bcd7c04fbdc67bce3b93a3a7168d47571cfdc55f834f61b710171b92cd0190de"
   },
   "xigpet/pet_mood.py": {
     "bytes": 23060,

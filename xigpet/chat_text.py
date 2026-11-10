@@ -31,21 +31,72 @@ def limit_sentences(content: str, maximum: int = 4) -> tuple[str, str]:
 
 
 def split_bubbles(content: str) -> list[str]:
-    """Distribute the complete response instead of throwing away its tail."""
-    paragraphs = [part.strip() for part in re.split(r"\n\s*\n", content) if part.strip()]
-    compact = "".join((" " if index and part[:1].isascii() else "") + part for index, part in enumerate(paragraphs))
-    # Short answers should not become three bubbles just because the model inserted blank lines.
-    if (len(paragraphs) > 1 and len(compact) <= 160 and "```" not in content
-            and "http" not in content and "[[" not in content and not limit_sentences(compact)[1]):
-        return [compact]
-    maximum = 4
-    result = []
-    for paragraph in paragraphs:
-        remaining = paragraph
-        while remaining:
-            head, remaining = limit_sentences(remaining, maximum)
-            if head:
-                result.append(head)
+    """One conversational sentence per bubble; preserve code, links and quotes.
+
+    A model's newline is also an intentional send boundary. All text is retained,
+    including tails beyond the continuation budget; no model call per sentence.
+    """
+    protected = re.compile(
+        r"```[\s\S]*?(?:```|$)|`[^`\n]+`|https?://[^\s<>。！？…，；“”‘’「」『』]+|"
+        r"(?m:^[ \t]*\|[^\n]*(?:\n[ \t]*\|[^\n]*)+)|"
+        r"(?m:^[ \t]*(?:[-*+]|\d+[.)]) [^\n]*(?:\n[ \t]*(?:[-*+]|\d+[.)]) [^\n]*)+)"
+    )
+    result, buffer, quotes = [], [], []
+    pairs = {"“": "”", "‘": "’", "「": "」", "『": "』"}
+
+    def flush():
+        text = "".join(buffer).strip()
+        if text:
+            result.append(text)
+        buffer.clear()
+
+    def plain(text):
+        index = 0
+        while index < len(text):
+            char = text[index]
+            if char in pairs:
+                quotes.append(pairs[char])
+            elif quotes and char == quotes[-1]:
+                quotes.pop()
+            if char in "\r\n" and not quotes:
+                flush()
+                index += 1
+                continue
+            buffer.append(char)
+            ending = char in "。！？!?；;…"
+            if char == ".":
+                following = text[index + 1:index + 2]
+                ending = not following or following.isspace() or "\u4e00" <= following <= "\u9fff"
+                # Keep common English abbreviations and version/decimal tokens.
+                prefix = "".join(buffer)
+                if re.search(r"\b(?:Mr|Mrs|Ms|Dr|Prof|Sr|Jr|e\.g|i\.e)\.$|\b(?:[A-Za-z]\.){2,}$", prefix, re.I):
+                    ending = False
+            if ending and not quotes:
+                # Repeated punctuation/ellipsis and closing quotation marks stay
+                # attached, rather than becoming punctuation-only messages.
+                while index + 1 < len(text) and text[index + 1] in "。！？!?；;…\"'”’」』":
+                    index += 1
+                    buffer.append(text[index])
+                flush()
+            index += 1
+
+    position = 0
+    for match in protected.finditer(content):
+        plain(content[position:match.start()])
+        token = match.group()
+        if token.startswith("```") or "\n" in token and not token.startswith(("http://", "https://")):
+            flush()
+            result.append(token.strip())
+        elif token.startswith(("http://", "https://")):
+            # English sentence punctuation following a URL is not part of it.
+            link = token.rstrip(".,!?;")
+            buffer.append(link)
+            plain(token[len(link):])
+        else:
+            buffer.append(token)
+        position = match.end()
+    plain(content[position:])
+    flush()
     return result
 
 
