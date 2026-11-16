@@ -27,6 +27,12 @@ config/chat_style.json
 config/growth.json
 config/web.json
 config/bangumi.json
+config/fortune.json
+config/emoticons.json
+config/images.json
+config/tools/
+media/tools/
+media/fortunes/
 memory/*
 !memory/.gitkeep
 plans/*

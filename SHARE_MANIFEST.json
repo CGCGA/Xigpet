@@ -8,8 +8,8 @@
     "sha256": "80cad5afa95cf50488f3727707098c8bd5008e6dc7ea0553638709e7ee00b852"
   },
   ".gitignore": {
-    "bytes": 475,
-    "sha256": "1e135dbc1fd155273441141825247cc22fbfb06547ebec8741d2fc739c0cc9ed"
+    "bytes": 579,
+    "sha256": "bb9693c6a89d412029ddab6622acd895825520501956a2619e949e7521a8ecd8"
   },
   "animation/float.gif": {
     "bytes": 4604138,
@@ -39,13 +39,17 @@
     "bytes": 88,
     "sha256": "4395743a24e0b191d353f737e89fe3600559712c3eaed962ed4c1ee63bd20ca6"
   },
+  "config/images.example.json": {
+    "bytes": 18,
+    "sha256": "957a681d695c034f7f870f9f4ded68af54d29cb1dbef84e188c51fce7b0b5175"
+  },
   "config/qq_bridge.example.json": {
     "bytes": 131,
     "sha256": "947f021dfc5dde619eb4d975867d8fa30e4393591072f5789f0d392b2f33edf0"
   },
   "config/setting.example.md": {
-    "bytes": 536,
-    "sha256": "960a76655791e8855474b86d054af3437661ecfa35fed940fd514e7c3e072adc"
+    "bytes": 650,
+    "sha256": "c641620e4248d0a0d5acec9e65fd0cb71021b8c139a69598d1bc07329709ffb1"
   },
   "config/web.example.json": {
     "bytes": 49,
@@ -132,8 +136,8 @@
     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   },
   "README.md": {
-    "bytes": 9388,
-    "sha256": "1a68ec93810070160c7d2ca34357a90f5e23a72116f549d4a6f1878198271164"
+    "bytes": 11233,
+    "sha256": "c4df06a93c39bf4ee46036c4860dd6ef286a4b93e5741908baf01cd961ed2e19"
   },
   "requirements.txt": {
     "bytes": 86,
@@ -147,6 +151,10 @@
     "bytes": 16937,
     "sha256": "d793d4e0aad7a24ce2a8eed7f2ad57548cad895e23a87861a56a61b48e43ed75"
   },
+  "scripts/browser_tasks.py": {
+    "bytes": 38926,
+    "sha256": "308c665aef6ef6fb6b4f500297fdd4dd3b01ad12ac83f8c384681078a0471808"
+  },
   "scripts/build_release.py": {
     "bytes": 2563,
     "sha256": "14a172c3ff5ebb53768ffc93be80c921b06ec1a5885cc1bb553331fea962d604"
@@ -154,6 +162,10 @@
   "scripts/deepseek_web.py": {
     "bytes": 8551,
     "sha256": "0c5783652f6cfd8f32887d5336dd7daf33087a119c54050116f86eced74947b8"
+  },
+  "scripts/download_store.py": {
+    "bytes": 18594,
+    "sha256": "8c4644679be055b4f0444bada402f36b190a9ac9c18a302ccaa076918658fbed"
   },
   "scripts/drawing_help.py": {
     "bytes": 3671,
@@ -175,25 +187,37 @@
     "bytes": 5923,
     "sha256": "936c5867072db8a574279647e8e262605a3870d5070a3513aa0b7f724454e242"
   },
+  "scripts/image_search.py": {
+    "bytes": 21578,
+    "sha256": "fc0e3dbc1f745b6e3ba234fb91696bbaf3db4108a8fdeb35dcb344fd65c33f27"
+  },
   "scripts/media_tools.py": {
-    "bytes": 6633,
-    "sha256": "2a8f0296a88371ff4842878930efc4e80b883df7d75dfbab21780ebc72b5cfc7"
+    "bytes": 7044,
+    "sha256": "6de6bd74419de6e6865add04b26c2015388009dd86ce94dda0b7dd5d2c0b108a"
   },
   "scripts/prepare_share.py": {
-    "bytes": 17405,
-    "sha256": "2234078e2e95f1046846e8bca6612164adfcad1306a9ac0417e6968fc827314d"
+    "bytes": 20851,
+    "sha256": "c740a33e597330b6f13f2ad0a1c842c8fae1894cc64738592818216fda872e3e"
+  },
+  "scripts/public_http.py": {
+    "bytes": 12004,
+    "sha256": "272ad0b9671862ea829a4ea901aaff31d50643a2ed459cfbfeb35fad323c88c3"
+  },
+  "scripts/resource_tools.py": {
+    "bytes": 5141,
+    "sha256": "bdf041ba6bfc7572b69ca04daf8c5095c0f31c1e799306c30fe822400ed2965e"
   },
   "scripts/screen_capture.py": {
-    "bytes": 3297,
-    "sha256": "93edd63465c6dbde6da653fa6d48356a81c7ae6ca02d4def62321905b144f73d"
+    "bytes": 6180,
+    "sha256": "1b55d0400c440d8b07683eba5d5c255f558a21d345ea73fed3897db019cfa675"
   },
   "scripts/update_installer.py": {
-    "bytes": 8648,
-    "sha256": "eaa20275c00a076e39fd64cded42759888545bcd298e47aa3208a115425866b4"
+    "bytes": 8666,
+    "sha256": "c29d976376140d7841a185c763cddac169393bce76fe4cdd827e543d8e1a7b5b"
   },
   "scripts/updater.py": {
-    "bytes": 12693,
-    "sha256": "534b31b41d8506a6c5852510ab0b81e39df8d8c54da3109b405d34647efaf643"
+    "bytes": 13142,
+    "sha256": "dd908b200ba33004926ae43d49be2d7710d2a0db72666184d5908dd4bbd62572"
   },
   "scripts/web_tools.py": {
     "bytes": 8605,
@@ -203,9 +227,13 @@
     "bytes": 1625,
     "sha256": "811da3eb22bcdcb82dea657b4fe59e9aca831d2d0cbd2aff26ccb6cf2436047d"
   },
+  "tool/README.md": {
+    "bytes": 12095,
+    "sha256": "eee4625376a13b424a899b9374cfe33dc223c4ca897a32e29bd7645698c02474"
+  },
   "VERSION.json": {
     "bytes": 21,
-    "sha256": "632a818d32a9bf4ea20983ba8b9cc159536672030602febc690e3bdc037907bb"
+    "sha256": "8ea1709beb8d5653902b1cd7f6d3aa614be6c70298b40054b332455c5894009e"
   },
   "Xig.png": {
     "bytes": 2072878,
@@ -220,8 +248,12 @@
     "sha256": "15ede2e1e0b911c6a8c2ef1109bfdf0c343e53679cd8377197b63b929370799a"
   },
   "xigpet/app.py": {
-    "bytes": 55173,
-    "sha256": "6ef10da8c75b18f4f285671a52c4f0ffee5bfada05518664ac500c0a98a2ed99"
+    "bytes": 59424,
+    "sha256": "ba509817a8ddbb8c70523c39e228d3bbdfdc0dbb3364454f99f3e92e3fdf4606"
+  },
+  "xigpet/canvas_bindings.py": {
+    "bytes": 647,
+    "sha256": "23f19bbfb90f44f5f0763e9f750a33ac53da106cc06b4eded5d1ce4c1530baab"
   },
   "xigpet/chat_history.py": {
     "bytes": 5194,
@@ -236,24 +268,28 @@
     "sha256": "1f444832891f374912634a5122163585193dacecbc4afe32bcebded60fe93032"
   },
   "xigpet/chat_view.py": {
-    "bytes": 19887,
-    "sha256": "cf25258dae01354ffcc9d3b448ab1ee38f4b4cecd471c69d0ab8da3f76dd33f2"
+    "bytes": 23114,
+    "sha256": "c187bc4f4a94bff5432b689ccca50c6cfdd75cca02a07b4660c087a752c0ea7c"
   },
   "xigpet/context_memory.py": {
-    "bytes": 17298,
-    "sha256": "2a7f50163775e027d06c89b11507c6a1fbf7f44fefe5f462e0d22d68bede29ed"
+    "bytes": 17355,
+    "sha256": "534d3c4c5451166aca9e775f0eb73a91ddf7308f4e6b5c9d039899921fb76ec9"
   },
   "xigpet/daily_plan.py": {
-    "bytes": 19635,
-    "sha256": "e9cea16965fd3dc7729de423773078309aee8ce9ba0fbce2ccba00803bcca5f2"
+    "bytes": 21665,
+    "sha256": "4de6247cd9e610b9431dd24c37cb5d62f0ac34428da0de2f8f66e63ef6162774"
   },
   "xigpet/desktop_pet.py": {
-    "bytes": 26923,
-    "sha256": "8bcdda01dd0d99adf6cf0ec4d480baa51c6fd58a1df6cf3c952fc5ce67dfeab8"
+    "bytes": 27587,
+    "sha256": "7e9604c2bcd603004cf064b280f34195d60d150704f2392b59410f771ac03e76"
+  },
+  "xigpet/growth_reflection.py": {
+    "bytes": 4621,
+    "sha256": "3b79cc463a752b8378029db18acb20465e2035946d10b489c8cc26a7ae9b3fbc"
   },
   "xigpet/growth_window.py": {
-    "bytes": 6731,
-    "sha256": "ea4a1ed8b32ee60c289290f4d676ee839b4dd20de54d70a03a81131b55a09538"
+    "bytes": 7878,
+    "sha256": "c218e3077c4d3dd3e5d1da1cf07570355b85adc80370e3c7bcb3f60fd928b8c8"
   },
   "xigpet/history_window.py": {
     "bytes": 10094,
@@ -288,24 +324,24 @@
     "sha256": "9d1ee3b9821227f5e78f87a0e3d03a930b95830a96a65c2804546249b4f3a0e2"
   },
   "xigpet/pet_core.py": {
-    "bytes": 78331,
-    "sha256": "bcd7c04fbdc67bce3b93a3a7168d47571cfdc55f834f61b710171b92cd0190de"
+    "bytes": 89521,
+    "sha256": "a6cc4c18cbf010a87ad703f2c12d3bd8f7dba21024b0effc1376780542291342"
   },
   "xigpet/pet_mood.py": {
     "bytes": 23060,
     "sha256": "aa0e522723b47805ade3b41fd03756b1151773dac293d990ae715f277d14fb07"
   },
   "xigpet/qq_bridge.py": {
-    "bytes": 20035,
-    "sha256": "11d54db2a7f91f7268f48cf2914c03dfcef720906fc8f78f5d146bb88e9ceea6"
+    "bytes": 21463,
+    "sha256": "8d638d7a687d80c7e211210b6d82f42917f9209fa2586873b5b8953abeefee3a"
   },
   "xigpet/qq_settings.py": {
     "bytes": 6743,
     "sha256": "e882415d0c74aece61f127dd4667b20dffc95e13e72d29e3c03dfb94992d1c64"
   },
   "xigpet/self_growth.py": {
-    "bytes": 7731,
-    "sha256": "869cbacf386952b5f0e5f907086c63201bd98ceb940b2ffe02eae87815e0c1ac"
+    "bytes": 9624,
+    "sha256": "df05a95368785384a4bc52d119eff167efb578d13111df4df2672bb4db3e5cc0"
   },
   "xigpet/storage_layout.py": {
     "bytes": 3121,
@@ -314,6 +350,10 @@
   "xigpet/system_tray.py": {
     "bytes": 3279,
     "sha256": "8d06e3036bc10d2666a6770753d2ce25a2d05943e3e343dac055a1ad7029ce88"
+  },
+  "xigpet/tool_plugins.py": {
+    "bytes": 18542,
+    "sha256": "e236c6fcaaf171b603902a75d8cda2c98e80a0abbf9028f1d76c308b6142164a"
   },
   "xigpet/update_window.py": {
     "bytes": 1875,
@@ -328,8 +368,8 @@
     "sha256": "a7f87e9337c7a49c97ebf907e3d959557e3f1397a4a21f4f617cb3b88dd4c7ee"
   },
   "宠物定制指南.md": {
-    "bytes": 21680,
-    "sha256": "f1c75cc1819886e42b07b7bbc872b6b0b8f8125fcbe3ee7fefe2ef94d5de2f32"
+    "bytes": 34427,
+    "sha256": "65a2a51e57996102360d5c6cb8a4423ef2bba20c9e385fcfd56b2b888a5fe1b2"
   },
   "打包EXE.bat": {
     "bytes": 312,
