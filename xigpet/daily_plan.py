@@ -12,14 +12,21 @@ from pathlib import Path
 
 
 ROW = re.compile(r"^- \[([ xX~-])\] ([0-2]\d:[0-5]\d) \| (.+)$")
-PLAN_POLICY = "morning-afternoon-evening-2-drawing-3-v2"
+PLAN_POLICY = "mood-adaptive-drawing-2-v3"
 GENERATED_MARKER = f"<!-- daily-planner: {PLAN_POLICY} -->"
 CONTACT_PERIODS = (("上午", 8, 12), ("下午", 12, 18), ("晚上", 18, 23))
 MIN_CONTACT_GAP = timedelta(minutes=30)
-MAX_DRAWINGS = 3
+MAX_DRAWINGS = 2
 DRAWING_PREFIX = "[自主画画] "
 _LOCKS = {}
 _LOCKS_GUARD = threading.Lock()
+
+
+def mood_budget(mood=75):
+    """Daily initiative budget; reminders are independent of the pet's mood."""
+    chats = 1 if mood < 40 else 2 if mood < 70 else 3 if mood < 80 else 4 if mood < 90 else 5
+    drawings = 0 if mood < 40 else 1 if mood < 80 else 2
+    return chats, drawings
 
 
 def _locked(method):
@@ -170,8 +177,11 @@ class DailyPlan:
                       for row in self.read(day))
         return max(recorded, started)
 
-    def _write(self, day: str, rows: list[dict], *, generated=None, automatic=None, last_contact=None, drawing_attempts=None) -> Path:
+    def _write(self, day: str, rows: list[dict], *, generated=None, automatic=None, last_contact=None, drawing_attempts=None, budget_marker=None) -> Path:
         path = self.path(day)
+        if budget_marker is None and self.has_day(day):
+            match = re.search(r"<!-- mood-budget: \d+,\d+ -->", path.read_text(encoding="utf-8"))
+            budget_marker = match[0] if match else None
         previous_automatic, previous_contact = self._metadata(day)
         automatic = previous_automatic if automatic is None else automatic
         generated = self.has_generated(day) if generated is None else generated
@@ -179,7 +189,9 @@ class DailyPlan:
         drawing_attempts = self._drawing_attempts(day) if drawing_attempts is None else drawing_attempts
         body = [f"# {day} 主动聊天计划", "", "时间为电脑本地时间；[ ] 待执行，[x] 已完成，[~] 已过期，[-] 绘画已开始（失败或重启后不自动重试）。", ""]
         if generated:
-            body.extend([GENERATED_MARKER, "上午 08:00–12:00、下午 12:00–18:00、晚上 18:00–23:00，主动联系目标每段 2 次；另可安排最多 3 次自主画画，题材由宠物决定。较晚启动只安排剩余时间。"])
+            body.extend([GENERATED_MARKER, "08:00–23:00 按心情安排：心情低于70时每天主动联系1–2次，否则3–5次；自主画画随心情减少，全天最多2次，也可以不画。较晚启动只安排剩余时间。"])
+        if budget_marker:
+            body.append(budget_marker)
         body.append(f"<!-- drawing-attempts: {drawing_attempts} -->")
         automatic = automatic.intersection(row["time"] for row in rows)
         if automatic:
@@ -230,18 +242,33 @@ class DailyPlan:
         return self._write(day, rows)
 
     @_locked
-    def save_generated(self, now: datetime, events: list[dict]) -> Path:
-        """Keep existing reminders/statuses and fill each available period to two."""
+    def save_generated(self, now: datetime, events: list[dict], *, mood=75) -> Path:
+        """Keep reminders and completed work; adapt future initiative to current mood."""
         day = now.date().isoformat()
-        if self.has_generated(day):
+        chat_budget, drawing_budget = mood_budget(mood)
+        budget_marker = f"<!-- mood-budget: {chat_budget},{drawing_budget} -->"
+        if self.has_generated(day) and budget_marker in self.current_path.read_text(encoding="utf-8").splitlines():
             return self.path(day)
         if not isinstance(events, list):
             raise ValueError("计划 events 须为列表")
         rows = self.read(day)
         automatic, _ = self._metadata(day)
+        # Reuse creative decisions when adapting, without another model request.
+        pending = [{**row, "kind": row.get("kind", "chat")} for row in rows
+                   if row["status"] == " " and (row["time"] in automatic or row.get("kind") == "drawing")]
+        rows = [row for row in rows
+                if not (row["status"] == " " and (row["time"] in automatic or row.get("kind") == "drawing"))]
+        events = events + pending
+        automatic.intersection_update(row["time"] for row in rows)
         slots = contact_slots(now)
+        # Spread the whole-day budget across periods. Late launches don't catch up.
+        counts = {"上午": 0, "下午": 0, "晚上": 0}
+        for period in ("上午", "晚上", "下午", "下午", "晚上")[:chat_budget]:
+            counts[period] += 1
+        spent = sum(row["time"] in automatic and row["status"] == "x" for row in rows)
+        remaining = max(0, chat_budget - spent)
         model_events = []
-        for event in events[:11]:
+        for event in events:
             if not isinstance(event, dict):
                 continue
             try:
@@ -260,10 +287,10 @@ class DailyPlan:
             future_slots = [slot for slot in slots if slot["period"] == period]
             if not future_slots:
                 continue
-            existing = sum(row.get("kind") != "drawing" and contact_period(row["time"]) == period
+            existing = sum(row["time"] in automatic and row.get("kind") != "drawing" and contact_period(row["time"]) == period
                            and row["status"] not in ("~", "-") for row in rows)
             chat_count = sum(row.get("kind") != "drawing" for row in rows)
-            needed = min(2 - existing, len(future_slots), 8 - chat_count)
+            needed = min(counts[period] - existing, len(future_slots), 8 - chat_count, remaining)
             if needed <= 0:
                 continue
             # Reserve distinct times, at least 30 minutes apart, including adjacent periods.
@@ -293,11 +320,12 @@ class DailyPlan:
                     rows.append({"status": " ", **candidate})
                     automatic.add(candidate["time"])
                     needed -= 1
-        # Drawing is optional: use only the model's creative decisions, up to three.
+                    remaining -= 1
+        # Drawing is optional; both planning and execution enforce the daily cap.
         # Retain old rows and spent attempts when upgrading today's existing plan.
         drawing_count = max(self._drawing_attempts(day), sum(row.get("kind") == "drawing" for row in rows))
         for event in model_events:
-            if event["kind"] != "drawing" or drawing_count >= MAX_DRAWINGS:
+            if event["kind"] != "drawing" or drawing_count >= drawing_budget:
                 continue
             if contact_period(event["time"]) is None:
                 continue
@@ -307,7 +335,12 @@ class DailyPlan:
                 continue
             rows.append({"status": " ", **event})
             drawing_count += 1
-        return self._write(day, rows, generated=True, automatic=automatic)
+        return self._write(day, rows, generated=True, automatic=automatic, budget_marker=budget_marker)
+
+    @_locked
+    def adapt_mood(self, now: datetime, mood: float) -> None:
+        if self.has_generated(now.date().isoformat()):
+            self.save_generated(now, [], mood=mood)
 
     @_locked
     def add(self, now: datetime, time: str, topic: str) -> Path:

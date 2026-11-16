@@ -196,6 +196,12 @@ def unpack_package(archive: Path, payload: Path, info: UpdateInfo):
         for name, digest in files.items():
             if name in allowed_placeholders:
                 continue
+            # Optional local tools are installed/updated separately. A host
+            # update must not reinstall removed tools or overwrite user tools.
+            if isinstance(name,str) and name.startswith("tool/") and name != "tool/README.md":
+                if "\\" in name or ":" in name or any(p in ("", ".", "..") for p in name.split("/")):
+                    raise UpdateError("更新包工具路径无效。")
+                continue
             if not allowed_file(name) or (name == "Xigpet.exe" and info.kind == "source"):
                 raise UpdateError("更新包包含非程序文件：" + str(name))
             if name not in by_name or not re.fullmatch(r"[a-f0-9]{64}", str(digest)):

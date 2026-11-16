@@ -30,13 +30,17 @@ def _read_index(path: Path) -> dict:
 
 
 def media_path(folder: Path, filename: str) -> Path:
-    if not isinstance(filename, str) or not re.fullmatch(r"(?:drawings/)?[\w\u4e00-\u9fff .-]{1,100}", filename):
+    if not isinstance(filename, str) or not re.fullmatch(r"(?:(?:drawings|fortunes)/|tools/[a-z][a-z0-9_]{0,31}/)?[\w\u4e00-\u9fff .-]{1,100}", filename):
         raise ValueError("请提供媒体文件名")
     if Path(filename).name in {".", ".."} or "\\" in filename:
         raise ValueError("只能发送 media 文件夹中的文件")
     path = folder / filename
     if folder.is_symlink() or (filename.startswith("drawings/") and (folder / "drawings").is_symlink()):
         raise ValueError("不允许使用媒体目录中的符号链接")
+    if filename.startswith("fortunes/") and (folder / "fortunes").is_symlink():
+        raise ValueError("不允许使用签图目录中的符号链接")
+    if filename.startswith("tools/") and (path.resolve() != path.absolute() or not path.resolve().is_relative_to(folder.resolve())):
+        raise ValueError("工具图片路径不能重定向到媒体目录外。")
     # Old chat markers keep working after their images have moved.
     if not path.exists() and filename.startswith("drawing_"):
         path = folder / "drawings" / filename

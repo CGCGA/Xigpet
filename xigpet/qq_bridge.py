@@ -22,6 +22,7 @@ from PIL import Image
 
 from scripts.image_inputs import MAX_IMAGES, MAX_SOURCE_BYTES, attach_images, save_image
 from scripts.media_tools import media_path, split_media
+from scripts.download_store import DownloadStore, split_files, split_attachments
 
 
 class QQError(ValueError):
@@ -237,6 +238,7 @@ def import_image(data: dict, folder: Path, call) -> str:
 
 
 def outgoing_segments(content: str, media_folder: Path) -> list[dict]:
+    content, _ = split_files(content)
     text, pictures = split_media(content)
     segments = [{"type": "text", "data": {"text": text}}] if text else []
     for name in pictures:
@@ -414,8 +416,23 @@ class QQBridge:
                 segments = outgoing_segments(content, self.media_folder)
                 if segments:
                     self.call("send_private_msg", {"user_id": int(self.settings.target_qq), "message": segments})
+                for identifier, mode in split_attachments(content)[1]:
+                    store = DownloadStore(self.image_folder.parent / "downloads")
+                    data, path = store.get(identifier)
+                    # OneBot reads the local verified file; avoid base64-loading
+                    # videos/audio into Python memory. The bridge must be local.
+                    if urlsplit(self.settings.ws_url).hostname not in ("127.0.0.1", "localhost", "::1"):
+                        raise QQError("下载附件需本机OneBot服务发送，请在聊天页另存。")
+                    if mode == "voice":
+                        _, path = store.voice(identifier)
+                        self.call("send_private_msg", {"user_id": int(self.settings.target_qq), "message": [{"type": "record", "data": {"file": path.as_uri()}}]})
+                    elif data["kind"] == "image":
+                        self.call("send_private_msg", {"user_id": int(self.settings.target_qq), "message": [{"type": "image", "data": {"file": path.as_uri()}}]})
+                    else:
+                        self.call("upload_private_file", {"user_id": int(self.settings.target_qq), "file": str(path), "name": data["name"] + path.suffix})
+                    store.mark_sent(identifier)
             except Exception as exc:
-                detail = str(exc) if isinstance(exc, QQError) else "图片无法发送或 QQ 连接中断。"
+                detail = str(exc) if isinstance(exc, QQError) else "附件或语音无法发送，文件无效或 QQ 连接中断。"
                 self._emit("qq_send_error", detail)
 
     def _receive_loop(self):

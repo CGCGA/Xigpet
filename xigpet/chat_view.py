@@ -7,14 +7,16 @@ import time
 import tkinter as tk
 import webbrowser
 from collections import OrderedDict
-from tkinter import messagebox
+from tkinter import messagebox, filedialog
 from urllib.parse import urlsplit
 from PIL import Image, ImageOps, ImageTk
 
 from . import pet_core
 from .chat_text import naturalize_text
+from .canvas_bindings import bind_item, clear_items
 from scripts.media_tools import media_path, split_media
 from scripts.image_inputs import image_path as shared_image_path, split_images
+from scripts.download_store import DownloadStore, split_files
 
 PAGE = "#f1f7fc"
 CHAT_BG = PAGE
@@ -116,7 +118,7 @@ class ConversationMixin:
             return
         self._layout_dirty = False
         old_top = self.chat_canvas.canvasy(0)
-        self.chat_canvas.delete("all")
+        clear_items(self.chat_canvas)
         self.animated_items.clear()
         self._display_images.clear()
         self._layout_width = self.chat_canvas.winfo_width()
@@ -211,9 +213,15 @@ class ConversationMixin:
         if abs(self._wheel_pending) >= 0.5:
             self._scroll_job = self.after(12, self._animate_scroll)
 
-    def _load_media(self, filename: str, *, user_image=False, preview_only=False) -> tuple[list, list[int]] | None:
+    def _load_media(self, filename: str, *, user_image=False, preview_only=False, download_image=False) -> tuple[list, list[int]] | None:
         try:
-            path = shared_image_path(pet_core.HISTORY.parent / "images", filename) if user_image else media_path(pet_core.MEDIA_DIR, filename)
+            if download_image:
+                from pathlib import Path
+                data, path = DownloadStore(pet_core.HISTORY.parent / "downloads").get(Path(filename).stem)
+                if data["kind"] != "image":
+                    return None
+            else:
+                path = shared_image_path(pet_core.HISTORY.parent / "images", filename) if user_image else media_path(pet_core.MEDIA_DIR, filename)
             key = (str(path), path.stat().st_mtime_ns, preview_only)
             if key not in self.media_images:
                 frames, delays = [], []
@@ -254,6 +262,15 @@ class ConversationMixin:
             return
         outgoing = role == "user"
         content = message["content"]
+        file_links = []
+        if role == "assistant":
+            content, file_ids = split_files(content)
+            for identifier in file_ids:
+                try:
+                    data, path = DownloadStore(pet_core.HISTORY.parent / "downloads").get(identifier)
+                    file_links.append((identifier, data, path))
+                except (OSError, ValueError, KeyError):
+                    content += "\n下载附件已过期或被清理。"
         media, media_paths, links = [], [], []
         filenames = []
         if role == "user":
@@ -272,6 +289,12 @@ class ConversationMixin:
                 media_paths.append(shared_image_path(pet_core.HISTORY.parent / "images", filename) if role == "user" else media_path(pet_core.MEDIA_DIR, filename))
             else:
                 content += "\n图片附件已缺失" if role == "user" else f"\n图片无法显示：{filename}"
+        for identifier, data, path in file_links:
+            if data["kind"] == "image":
+                loaded = self._load_media(identifier, preview_only=True, download_image=True)
+                if loaded:
+                    media.append(loaded)
+                    media_paths.append(path)
         previous = self.messages[index - 1]["role"] if index else None
         grouped = previous == role and role in {"assistant", "user"}
         stamp = str(message.get("time", ""))[:16]
@@ -292,9 +315,11 @@ class ConversationMixin:
         media_width = max((frames[0].width() for frames, _ in media), default=0)
         media_height = sum(frames[0].height() + 10 for frames, _ in media)
         bubble_width = max(72, text_width + 36, media_width + 24, 200 if links else 0)
-        bubble_height = max(38, text_height + 26 + media_height + len(links) * 25)
+        bubble_height = max(38, text_height + 26 + media_height + len(links) * 25 + len(file_links) * 35)
+        if file_links:
+            bubble_width = max(bubble_width, 300)
         x = left + column - bubble_width if outgoing else left + 54
-        sticker_only = role == "assistant" and bool(media) and not content and not links
+        sticker_only = role == "assistant" and bool(media) and not content and not links and not file_links
         if sticker_only:
             bubble_height = media_height + 8
         fill = BLUE_LIGHT if outgoing else ("#fff1ef" if role == "error" else WHITE)
@@ -312,21 +337,39 @@ class ConversationMixin:
         for (frames, delays), path in zip(media, media_paths):
             self._display_images.append(frames[0])
             item = canvas.create_image(x + 12, next_y, image=frames[0], anchor="nw", tags="chat_media")
-            canvas.tag_bind(item, "<Button-1>", lambda _event, image=path: self._open_file(image))
-            canvas.tag_bind(item, "<Enter>", lambda _event: canvas.configure(cursor="hand2"))
-            canvas.tag_bind(item, "<Leave>", lambda _event: canvas.configure(cursor=""))
+            bind_item(canvas, item, "<Button-1>", lambda _event, image=path: self._open_file(image))
+            bind_item(canvas, item, "<Enter>", lambda _event: canvas.configure(cursor="hand2"))
+            bind_item(canvas, item, "<Leave>", lambda _event: canvas.configure(cursor=""))
             if str(path) in self._gif_paths:
                 self.animated_items.append({"item": item, "preview": frames[0], "frames": frames,
                     "delays": delays, "path": path, "user_image": outgoing, "loaded": False,
+                    "download_image": path.parent == pet_core.HISTORY.parent / "downloads",
                     "index": 0, "next": time.monotonic() + delays[0] / 1000})
             next_y += frames[0].height() + 10
         for number, url in enumerate(links):
             label = f"↗ {urlsplit(url).netloc or '来源'}"
             item = canvas.create_text(x + 18, next_y + number * 25 + 4, text=label, anchor="nw", fill=BLUE, font=(FONT, 9), tags="source_link")
-            canvas.tag_bind(item, "<Button-1>", lambda _event, target=url: webbrowser.open_new_tab(target))
-            canvas.tag_bind(item, "<Enter>", lambda _event: canvas.configure(cursor="hand2"))
-            canvas.tag_bind(item, "<Leave>", lambda _event: canvas.configure(cursor=""))
+            bind_item(canvas, item, "<Button-1>", lambda _event, target=url: webbrowser.open_new_tab(target))
+            bind_item(canvas, item, "<Enter>", lambda _event: canvas.configure(cursor="hand2"))
+            bind_item(canvas, item, "<Leave>", lambda _event: canvas.configure(cursor=""))
+        for number, (identifier, data, path) in enumerate(file_links):
+            label = f"↓ {data['name'][:22]}.{data['extension']} · {data['size'] / 1048576:.1f} MB · 保存"
+            item = canvas.create_text(x + 18, next_y + len(links) * 25 + number * 35 + 5, text=label, anchor="nw", fill=BLUE, font=(FONT, 9))
+            bind_item(canvas, item, "<Button-1>", lambda _event, value=identifier: self._save_download(value))
+            bind_item(canvas, item, "<Enter>", lambda _event: canvas.configure(cursor="hand2"))
+            bind_item(canvas, item, "<Leave>", lambda _event: canvas.configure(cursor=""))
         self._layout_y = y + bubble_height
+
+    def _save_download(self, identifier):
+        try:
+            store = DownloadStore(pet_core.HISTORY.parent / "downloads")
+            data, path = store.get(identifier)
+            destination = filedialog.asksaveasfilename(parent=self, initialfile=data["name"] + path.suffix,
+                                                      defaultextension=path.suffix, filetypes=[("已验证附件", "*" + path.suffix)])
+            if destination:
+                store.save(identifier, destination)
+        except (OSError, ValueError, KeyError) as exc:
+            messagebox.showerror("附件无法保存", str(exc), parent=self)
 
     def _wake_media(self):
         if self._media_job is not None:
@@ -350,7 +393,7 @@ class ConversationMixin:
                 continue
             active += 1
             if not animation["loaded"]:
-                result = self._load_media(animation["path"].name, user_image=animation["user_image"])
+                result = self._load_media(animation["path"].name, user_image=animation["user_image"], download_image=animation.get("download_image", False))
                 if not result:
                     continue
                 animation["frames"], animation["delays"] = result
@@ -380,7 +423,7 @@ class ConversationMixin:
 
     def clear_messages(self):
         self.messages = []
-        self.chat_canvas.delete("all")
+        clear_items(self.chat_canvas)
         self.animated_items.clear()
         self._display_images.clear()
         self.media_images.clear()
@@ -400,6 +443,7 @@ class ConversationMixin:
             if job is not None:
                 self.after_cancel(job)
                 setattr(self, name, None)
+        clear_items(self.chat_canvas)
         self.animated_items.clear()
         self.media_images.clear()
         self._media_costs.clear()

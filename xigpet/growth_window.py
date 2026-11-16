@@ -12,6 +12,7 @@ class GrowthWindow(tk.Toplevel):
     def __init__(self, master, store):
         super().__init__(master)
         self.store = store
+        self._status_job = None
         self.title("自我成长")
         self.geometry("690x760")
         self.minsize(620, 680)
@@ -55,6 +56,29 @@ class GrowthWindow(tk.Toplevel):
         self.detail.pack(fill="both", expand=True, padx=10, pady=(0, 10))
         self.history.bind("<<ListboxSelect>>", self._show_detail)
         self._reload()
+        self._tick_status()
+
+    def _tick_status(self):
+        try:
+            data = self.store.snapshot()
+            reflection = data.get("reflection", {})
+            status = {"queued": "正在后台回顾", "changed": "已产生新成长", "unchanged": "已回顾，暂未形成持久变化",
+                      "failed": "上次回顾未成功，稍后重试", "stale": "设定已变化，下次重新回顾"}.get(reflection.get("status"))
+            if data["revision"] != getattr(self, "revision", None):
+                self.notice.set("有新成长，点重新读取查看")
+            elif status:
+                self.notice.set(status)
+            else:
+                self.notice.set(f"成长回顾积累中：{reflection.get('turns', 0)}/6轮")
+        except (GrowthError, MoodError, OSError):
+            self.notice.set("成长记录暂不可用")
+        self._status_job = self.after(5000, self._tick_status)
+
+    def destroy(self):
+        if self._status_job is not None:
+            self.after_cancel(self._status_job)
+            self._status_job = None
+        super().destroy()
 
     def _reload(self):
         try:

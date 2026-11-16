@@ -8,6 +8,7 @@ import os
 import time
 import tkinter as tk
 from functools import lru_cache
+from .canvas_bindings import bind_item, clear_items
 from pathlib import Path
 from tkinter import simpledialog
 
@@ -286,7 +287,7 @@ class DesktopPet(tk.Toplevel):
         self._animations.clear()
         self._animation_state = None
         self.canvas.configure(width=self.size, height=self.size)
-        self.canvas.delete("all")
+        clear_items(self.canvas)
         self._sprite_item = self.canvas.create_image(self.size / 2, self.size / 2)
         self._switch_animation(self.behavior.state)
 
@@ -556,7 +557,7 @@ class DesktopPet(tk.Toplevel):
         y = self._y - height - 6 if above else min(bottom - height, self._y + self.size + 6)
         position_window(self.bubble, width, height, x, y)
         canvas = self.bubble_canvas
-        canvas.delete("all")
+        clear_items(canvas)
         y1, y2 = (2, height - 17) if above else (14, height - 5)
         rounded(canvas, 3, y1 + 2, 257, y2 + 2, fill="#cbdfea", outline="")
         rounded(canvas, 3, y1, 257, y2, fill="#f5faff", outline="#d5e6f3")
@@ -574,11 +575,11 @@ class DesktopPet(tk.Toplevel):
                         fill="#529bd3" if accepted else "#e1ecf4", outline="", tags=tag)
                 canvas.create_text(x1 + 50, y1 + 89, text=label, font=(FONT, 10),
                                    fill="white" if accepted else "#29485e", tags=tag)
-                canvas.tag_bind(tag, "<Button-1>", lambda _event, choice=accepted: self._answer_bubble(choice))
+                bind_item(canvas, tag, "<Button-1>", lambda _event, choice=accepted: self._answer_bubble(choice))
         else:
             canvas.create_text(238, y2 - 12, text="点击查看", anchor="e", font=(FONT, 8), fill="#88a1b3")
             canvas.addtag_all("bubble_open")
-            canvas.tag_bind("bubble_open", "<Button-1>", lambda _event: self.on_restore())
+            bind_item(canvas, "bubble_open", "<Button-1>", lambda _event: self.on_restore())
 
     def _hide_bubble(self):
         if self._bubble_job is not None:

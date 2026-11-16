@@ -32,7 +32,9 @@ from .history_window import HistoryWindow
 from .qq_bridge import QQBridge, QQSettings
 from .qq_settings import QQSettingsWindow
 from .growth_window import GrowthWindow
-from scripts.screen_capture import ScreenCapturePrompt, screen_request_handler
+from scripts.screen_capture import ScreenCapturePrompt, screen_request_handler, direct_screen_request
+from scripts.browser_tasks import cancel_active
+from scripts.download_store import cleanup_cache, split_files
 from scripts import updater
 from .update_window import UpdateWindow
 from .mood_window import MoodWindow
@@ -97,6 +99,7 @@ class PetWindow(ConversationMixin, tk.Tk):
         self._tool_screen_timeout = None
         self._capture_restore_chat = False
         self._capture_reason = None
+        self._capture_direct_content = None
         self._screen_request_until = 0.0
         self._capturing_screen = False
         self._capture_job = None
@@ -132,6 +135,8 @@ class PetWindow(ConversationMixin, tk.Tk):
         self._closing = True
         pet_core.close_mood_worker()
         pet_core.close_memory_worker()
+        pet_core.close_growth_worker()
+        cancel_active()
         if self._memory_window is not None and self._memory_window.winfo_exists():
             self._memory_window.destroy()
         if self._mood_window is not None and self._mood_window.winfo_exists():
@@ -265,7 +270,8 @@ class PetWindow(ConversationMixin, tk.Tk):
     def _notify_background_message(self, content: str) -> None:
         self._clear_screen_prompt()
         text, media = split_media(content)
-        preview = naturalize_text(text).strip() or ("发来了一张图片" if media else "有新消息")
+        text, files = split_files(text)
+        preview = naturalize_text(text).strip() or ("下载附件已准备好" if files else "发来了一张图片" if media else "有新消息")
         if self._desktop_enabled and self._desktop is not None:
             self._desktop.show_bubble(preview)
         self._unread_count += 1
@@ -362,10 +368,18 @@ class PetWindow(ConversationMixin, tk.Tk):
             if self._desktop is not None and self._background:
                 self._desktop.show_bubble("现在还不能发送截图，稍后再问你。", preview=False)
             return
+        self._start_screen_capture(reason)
+
+    def _start_screen_capture(self, reason=None, direct_content=None) -> None:
+        if self._closing or self.busy or self._capturing_screen or self._attachments_loading:
+            return
+        self._clear_screen_prompt()
+        self._pending_tool_screen_reason = None
         self._reset_idle_timer()
         self._capturing_screen = True
         self._begin_turn()
-        self.status.set("正在截取本次同意分享的屏幕…")
+        self._capture_direct_content = direct_content
+        self.status.set("正在按你的请求截图…" if direct_content is not None else "正在截取本次同意分享的屏幕…")
         pet = self._desktop
         target = pet if self._background and pet is not None else self
         bbox = work_area(target, target.winfo_rootx() + target.winfo_width() / 2,
@@ -404,12 +418,22 @@ class PetWindow(ConversationMixin, tk.Tk):
             return
         self._capturing_screen = False
         self._restore_after_screen_capture()
-        text = ("我同意分享这一次截图。请根据屏幕继续处理刚才的请求：" + self._capture_reason
-                if self._capture_reason else "你刚才问能否查看屏幕，我同意分享这一次截图。看看我现在在做什么，按你的性格自然聊两句吧。")
+        direct = self._capture_direct_content
+        self._capture_direct_content = None
+        if direct is not None:
+            text, images = split_images(direct)
+            note = "（已按本次请求截取当前屏幕，请结合截图处理上面的请求，不要重复申请截图。）"
+            if len(images) >= MAX_IMAGES:
+                note += "本次最多附四张图片，保留前三张原图和本次截图。"
+            content = attach_images(text + "\n" + note, [*images[:MAX_IMAGES - 1], name])
+            shown = attach_images("按你的请求截取了这一次屏幕。", [name])
+        else:
+            text = ("我同意分享这一次截图。请根据屏幕继续处理刚才的请求：" + self._capture_reason
+                    if self._capture_reason else "你刚才问能否查看屏幕，我同意分享这一次截图。看看我现在在做什么，按你的性格自然聊两句吧。")
+            content = shown = attach_images(text, [name])
         self._capture_reason = None
-        content = attach_images(text, [name])
-        self._add_message("user", content)
-        threading.Thread(target=self._worker, args=(content,), daemon=True).start()
+        self._add_message("user", shown)
+        threading.Thread(target=self._worker, args=(content, True), daemon=True).start()
 
     def _restore_after_screen_capture(self) -> None:
         if self._background and self._desktop_enabled and self._desktop is not None:
@@ -446,6 +470,8 @@ class PetWindow(ConversationMixin, tk.Tk):
                                         bg=WHITE, fg=BLUE, relief="flat", bd=0, font=(FONT, 9),
                                         cursor="hand2", padx=8, pady=9)
         self.update_button.pack(side="right")
+        tk.Button(header, text="取消浏览/下载", command=self._cancel_resources, bg=WHITE, fg=MUTED,
+                  relief="flat", bd=0, font=(FONT, 9), padx=8, pady=9).pack(side="right")
         tk.Frame(self, bg=LINE, height=1).pack(fill="x")
         mood_strip = tk.Frame(self, bg=WHITE)
         mood_strip.pack(fill="x")
@@ -458,6 +484,10 @@ class PetWindow(ConversationMixin, tk.Tk):
                   relief="flat", bd=0, font=(FONT, 9), cursor="hand2").pack(side="right", padx=24, pady=(2, 7))
         tk.Button(mood_strip, text="自我成长", command=self._open_growth, bg=WHITE, fg=BLUE,
                   relief="flat", bd=0, font=(FONT, 9), cursor="hand2").pack(side="right", padx=8, pady=(2, 7))
+        self._tool_actions_frame = tk.Frame(mood_strip, bg=WHITE)
+        self._tool_actions_frame.pack(side="right", padx=8, pady=(2, 7))
+        self._tool_actions_signature = None
+        self._refresh_tool_actions()
         composer_area = tk.Frame(self, bg=PAGE, padx=24, pady=14)
         composer_area.pack(side="bottom", fill="x")
         self.attachment_frame = tk.Frame(composer_area, bg=PAGE)
@@ -491,6 +521,41 @@ class PetWindow(ConversationMixin, tk.Tk):
         self.composer.tag_lower(shape)
         self.composer.itemconfigure(self.input_window, width=max(180, event.width - 36))
         self.composer.coords(self.send_window, event.width - 94, 65)
+
+    def _cancel_resources(self):
+        cancel_active()
+        self.status.set("已取消当前浏览/下载任务")
+
+    def _refresh_tool_actions(self):
+        if self._closing:
+            return
+        actions = pet_core.external_tool_registry().quick_actions()
+        signature = tuple((a["label"], a["message"]) for a in actions)
+        if signature == self._tool_actions_signature:
+            return
+        self._tool_actions_signature = signature
+        for child in self._tool_actions_frame.winfo_children():
+            child.destroy()
+        for label, message in signature:
+            tk.Button(self._tool_actions_frame, text=label, command=lambda text=message: self._request_tool(text),
+                      bg=WHITE, fg=BLUE, relief="flat", bd=0, font=(FONT, 9), cursor="hand2").pack(side="right", padx=8)
+
+    def _request_tool(self, message):
+        if self.busy or self._attachments_loading or self._pending_images:
+            self.status.set("请先完成当前消息或处理已选择的图片，再调用工具。")
+            return
+        if not self._placeholder and self.input.get("1.0", "end-1c").strip():
+            self.status.set("请先发送或清空正在输入的内容，再调用工具。")
+            return
+        self._remove_placeholder()
+        self.input.delete("1.0", "end")
+        self.input.insert("1.0", message)
+        self._send()
+
+    def _resource_cleanup_tick(self):
+        if not self._closing:
+            threading.Thread(target=cleanup_cache, args=(pet_core.HISTORY.parent / "downloads",), daemon=True).start()
+            self.after(1800000, self._resource_cleanup_tick)
 
     def _choose_images(self) -> None:
         if self.busy or self._attachments_loading:
@@ -740,6 +805,9 @@ class PetWindow(ConversationMixin, tk.Tk):
             return
         self._add_message("user", content)
         self._reset_idle_timer()
+        if direct_screen_request(content):
+            self._clear_screen_prompt()
+            self._pending_tool_screen_reason = None
         self._qq_pending.append((content, line))
         self._maybe_start_qq_reply()
 
@@ -751,6 +819,9 @@ class PetWindow(ConversationMixin, tk.Tk):
             self._set_qq_status("QQ 消息已留档，等待填写 DeepSeek API Key 后回复。")
             return
         content, line = self._qq_pending.popleft()
+        if direct_screen_request(content):
+            self._start_screen_capture(split_images(content)[0], direct_content=content)
+            return
         self._begin_turn()
         threading.Thread(target=self._qq_reply_worker, args=(self.events, content, line, self._queue_screen_request), daemon=True).start()
 
@@ -771,6 +842,7 @@ class PetWindow(ConversationMixin, tk.Tk):
         return "今天有什么想分享的吗？" if self.key_ready else "点右上角设置 API Key，就可以开始聊天了。"
 
     def _refresh_identity(self) -> None:
+        self._refresh_tool_actions()
         name, key_ready = pet_core.pet_name(), pet_core.has_key()
         changed = name != self.pet_name or key_ready != self.key_ready
         if name != self.pet_name:
@@ -895,6 +967,7 @@ class PetWindow(ConversationMixin, tk.Tk):
             self.planning = True
             threading.Thread(target=self._plan_worker, daemon=True).start()
         if self._prepared_update is None and has_today and not self.busy and not self.planning and not self._capturing_screen and not self._screen_tool_reason and time.monotonic() >= self.next_due_attempt:
+            plan.adapt_mood(now, pet_core.initiative_mood())
             event = plan.due(now)
             if event:
                 if event.get("kind") == "drawing" and not pet_core.has_key():
@@ -965,6 +1038,9 @@ class PetWindow(ConversationMixin, tk.Tk):
         self._pending_images.clear()
         self._render_attachments()
         self._add_message("user", content)
+        if direct_screen_request(content):
+            self._start_screen_capture(text, direct_content=content)
+            return
         self._begin_turn()
         threading.Thread(target=self._worker, args=(content,), daemon=True).start()
 
@@ -977,9 +1053,9 @@ class PetWindow(ConversationMixin, tk.Tk):
         self._refresh_send_state()
         self.status.set(f"{self.pet_name}正在回复…")
 
-    def _worker(self, content: str) -> None:
+    def _worker(self, content: str, screenshot_supplied=False) -> None:
         try:
-            with screen_request_handler(self._queue_screen_request):
+            with screen_request_handler(self._queue_screen_request, screenshot_supplied=screenshot_supplied):
                 pet_core.reply(content, on_reply=lambda answer: self.events.put(("reply", answer)))
             self.events.put(("turn_done", ""))
         except Exception as exc:
@@ -1060,6 +1136,7 @@ class PetWindow(ConversationMixin, tk.Tk):
             elif kind == "screen_capture_error":
                 self._capturing_screen = False
                 self._capture_reason = None
+                self._capture_direct_content = None
                 self._restore_after_screen_capture()
                 if self._background and self._desktop_enabled and self._desktop is not None:
                     self._desktop.show_bubble("这次截图失败了，请回聊天窗口查看。", preview=False)
@@ -1121,6 +1198,7 @@ class PetWindow(ConversationMixin, tk.Tk):
 def main() -> None:
     """Start the desktop chat application."""
     window = PetWindow()
+    window.after(10000, window._resource_cleanup_tick)
     window.after(500, window._show_update_result)
     window.mainloop()
 

@@ -312,6 +312,7 @@ class SummaryWorker:
                 if self._closed:
                     return
                 continue
+            candidate = result = None
             try:
                 settings = memory.settings()
                 if not self._closed and settings["auto_compress"] and generation == memory.generation:
@@ -332,7 +333,7 @@ class SummaryWorker:
                     self._pending.discard(id(memory))
                     if not self._queue.unfinished_tasks:
                         self._idle.set()
-                del memory, key
+                del memory, key, candidate, result
 
     def wait_idle(self, timeout=3):
         return self._idle.wait(timeout)

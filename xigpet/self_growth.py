@@ -46,6 +46,12 @@ class GrowthStore:
             self._validate_fields(row.get("before"), complete=True)
             self._validate_fields(row.get("after"), complete=True)
         edits = state.setdefault("pet_edits", [row["at"] for row in state["history"] if row["actor"] == "pet"])
+        reflection = state.get("reflection", {})
+        if (not isinstance(reflection, dict) or type(reflection.get("turns", 0)) is not int
+                or not 0 <= reflection.get("turns", 0) <= 6
+                or type(reflection.get("at", 0)) not in (int, float)
+                or not math.isfinite(reflection.get("at", 0))):
+            raise GrowthError("成长回顾记录无效。")
         if (not isinstance(edits, list) or len(edits) > 100
                 or any(type(t) not in (int, float) or not math.isfinite(t) or not 0 <= t <= 1e11 for t in edits)):
             raise GrowthError("成长修改时间记录无效。")
@@ -79,6 +85,36 @@ class GrowthStore:
             value = {**current, **config}
             self._validate_config(value)
             _save_json(self.config_path, {key: value[key] for key in DEFAULT_CONFIG})
+
+    def reserve_reflection(self):
+        """Persist bounded scheduling state; six delivered turns, >=30 min apart."""
+        with self._lock:
+            config, state = self._read()
+            if not config["enabled"] or len(set(config["locked_fields"])) == len(FIELDS) or not config["daily_limit"]:
+                return None
+            now = self.clock()
+            edits = state["pet_edits"]
+            if edits and now - edits[-1] < config["cooldown_hours"] * 3600:
+                return None
+            if sum(datetime.fromtimestamp(t).date() == datetime.fromtimestamp(now).date() for t in edits) >= config["daily_limit"]:
+                return None
+            previous = state.get("reflection", {})
+            turns = min(6, previous.get("turns", 0) + 1)
+            state["reflection"] = {**previous, "turns": turns}
+            if turns < 6 or now - previous.get("at", 0) < 1800:
+                _save_json(self.state_path, state)
+                return None
+            token = uuid.uuid4().hex
+            state["reflection"] = {"turns": 0, "at": now, "status": "queued", "token": token}
+            _save_json(self.state_path, state)
+            return deepcopy({**state, "config": config})
+
+    def reflection_status(self, token, status):
+        with self._lock:
+            _, state = self._read()
+            if state.get("reflection", {}).get("token") == token:
+                state["reflection"]["status"] = status
+                _save_json(self.state_path, state)
 
     def update(self, changes, revision, reason, *, actor="pet", source_line=None):
         self._validate_fields(changes)
